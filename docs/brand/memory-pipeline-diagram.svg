@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" width="900" height="420">
+  <defs>
+    <style>
+      .box { rx: 10; ry: 10; stroke-width: 2; }
+      .step { fill: #1a1f36; stroke: #1a1f36; }
+      .dedup { fill: #5b6b8a; stroke: #5b6b8a; }
+      .store { fill: #3b7a57; stroke: #3b7a57; }
+      .compress { fill: #8e9ab5; stroke: #8e9ab5; }
+      .label { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 14px; font-weight: 600; fill: white; text-anchor: middle; }
+      .sublabel { font-family: 'SF Mono', monospace; font-size: 10px; fill: rgba(255,255,255,0.7); text-anchor: middle; }
+      .arrow { fill: none; stroke: #8e9ab5; stroke-width: 2; stroke-linecap: round; marker-end: url(#ah); }
+      .arrow-down { fill: none; stroke: #8e9ab5; stroke-width: 2; stroke-linecap: round; marker-end: url(#ah); }
+      .outcome { font-family: 'SF Mono', monospace; font-size: 11px; fill: #5b6b8a; text-anchor: middle; }
+      .section-title { font-family: -apple-system, sans-serif; font-size: 20px; font-weight: 700; fill: #1a1f36; }
+      .section-sub { font-family: -apple-system, sans-serif; font-size: 14px; fill: #8e9ab5; }
+    </style>
+    <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#8e9ab5" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text class="section-title" x="40" y="40">Memory Pipeline</text>
+  <text class="section-sub" x="40" y="62">Extract → Deduplicate → Store → Compress → Retrieve</text>
+
+  <!-- Row 1: Extraction -->
+  <rect class="box step" x="40" y="90" width="160" height="60" />
+  <text class="label" x="120" y="122">Extract</text>
+  <text class="sublabel" x="120" y="138">dual-source LLM</text>
+
+  <line class="arrow" x1="200" y1="120" x2="260" y2="120" />
+
+  <!-- Dedup -->
+  <rect class="box dedup" x="270" y="90" width="160" height="60" />
+  <text class="label" x="350" y="122">Deduplicate</text>
+  <text class="sublabel" x="350" y="138">cosine similarity</text>
+
+  <line class="arrow" x1="430" y1="120" x2="490" y2="120" />
+
+  <!-- Store -->
+  <rect class="box store" x="500" y="90" width="160" height="60" />
+  <text class="label" x="580" y="122">Store</text>
+  <text class="sublabel" x="580" y="138">with embedding</text>
+
+  <!-- Dedup outcomes -->
+  <line class="arrow-down" x1="350" y1="150" x2="350" y2="195" />
+  <rect x="220" y="200" width="260" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+  <text class="outcome" x="350" y="225">≥ 0.95 similarity → skip</text>
+  <text class="outcome" x="350" y="245">≥ 0.85 similarity → update</text>
+  <text class="outcome" x="350" y="265">&lt; 0.85 similarity → create new</text>
+
+  <!-- Row 2: Compression pipeline -->
+  <text style="font-family: -apple-system, sans-serif; font-size: 16px; font-weight: 600; fill: #1a1f36;" x="40" y="330">Compression (background)</text>
+
+  <rect class="box step" x="40" y="350" width="130" height="50" />
+  <text class="label" x="105" y="379">Full</text>
+
+  <line class="arrow" x1="170" y1="375" x2="230" y2="375" />
+  <text class="outcome" x="200" y="365">30d</text>
+
+  <rect class="box compress" x="240" y="350" width="130" height="50" />
+  <text class="label" x="305" y="379">Summarized</text>
+
+  <line class="arrow" x1="370" y1="375" x2="430" y2="375" />
+  <text class="outcome" x="400" y="365">90d</text>
+
+  <rect class="box" x="440" y="350" width="130" height="50" style="fill: #cbd5e1; stroke: #cbd5e1;" />
+  <text style="font-family: -apple-system, sans-serif; font-size: 14px; font-weight: 600; fill: #1a1f36; text-anchor: middle;" x="505" y="379">Archived</text>
+
+  <!-- Retrieval -->
+  <rect class="box store" x="660" y="90" width="200" height="60" rx="10" />
+  <text class="label" x="760" y="118">Retrieve</text>
+  <text class="sublabel" x="760" y="134">vector search + category</text>
+
+  <!-- Source types -->
+  <rect x="40" y="170" width="160" height="50" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+  <text class="outcome" x="120" y="192">confirmed (user facts)</text>
+  <text class="outcome" x="120" y="208">inferred (assistant)</text>
+</svg>

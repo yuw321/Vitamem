@@ -1,0 +1,100 @@
+---
+title: Health History Tracking
+description: Use Vitamem to track and recall a user's evolving health history over time.
+---
+
+# Health History Tracking
+
+Beyond conversation memory, Vitamem can serve as the persistent health history layer for your AI application — accumulating a rich, searchable record of a user's health journey across many sessions over months or years.
+
+## What to Track
+
+Vitamem's fact extraction works best when your extraction prompt focuses on specific categories:
+
+| Category | Examples |
+|----------|---------|
+| Conditions | "Has hypertension", "Diagnosed with anxiety disorder" |
+| Medications | "Takes lisinopril 10mg daily", "Recently stopped statins" |
+| Vitals & labs | "A1C was 7.2 in March", "Blood pressure averaging 130/85" |
+| Lifestyle | "Exercises 4x per week", "Follows a low-carb diet" |
+| Goals | "Wants to lose 15 pounds by summer", "Aiming for A1C under 7.0" |
+| Care team | "Primary care: Dr. Chen", "Sees endocrinologist quarterly" |
+| Family history | "Father had heart disease", "Mother has Type 2 diabetes" |
+
+## Example: Chronic Condition Tracking
+
+```typescript
+// Extraction prompt tuned for chronic condition management
+async extractMemories(messages) {
+  const prompt = `Review this health check-in conversation and extract health history facts.
+
+Categories to extract:
+- Medical conditions (diagnosed or suspected)
+- Medications and supplements (name, dose, frequency)
+- Lab values and vital signs (with dates if mentioned)
+- Lifestyle factors (diet, exercise, sleep, stress)
+- Health goals and progress
+- Symptoms mentioned
+- Care team and appointments
+
+Conversation:
+${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+Return JSON only: [{ "content": "specific factual statement", "source": "confirmed" | "inferred" }]
+Be specific — include numbers, dates, and dosages when provided.`;
+
+  const raw = await this.chat([{ role: 'user', content: prompt }]);
+  return JSON.parse(raw);
+},
+```
+
+## Building a Health Timeline
+
+You can reconstruct a user's health timeline by querying their memories:
+
+```typescript
+// Get a broad snapshot of the user's health history
+const healthSnapshot = await mem.retrieve({
+  userId: 'patient-789',
+  query: 'health conditions medications lifestyle diet exercise',
+  limit: 20,
+});
+
+// Format as a health summary for injection into a new session
+const healthSummary = healthSnapshot
+  .filter(m => m.score > 0.7) // Only high-relevance memories
+  .map(m => `- ${m.content} (${m.source === 'confirmed' ? 'stated' : 'observed'})`)
+  .join('\n');
+
+const systemPrompt = `You are a health companion for this patient.
+
+Known health history:
+${healthSummary}
+
+Use this context to give personalized, relevant support.`;
+```
+
+## Handling Health Record Updates
+
+When a user's health situation changes (new diagnosis, medication change, etc.), Vitamem handles it naturally:
+
+- The new fact is extracted at dormant transition
+- Deduplication compares it against existing memories
+- If it's genuinely new (e.g., "Now on insulin" when previously only metformin was recorded), it's saved
+- If it's an update to an existing fact (e.g., metformin dosage change), the new fact is saved and the old one remains — giving you a history of changes
+
+<Info>
+  Vitamem does not currently support "updating" an existing memory — all memories are append-only. If your app needs to track that a user *stopped* a medication, add explicit extraction guidance for that in your prompt.
+</Info>
+
+## Privacy Considerations
+
+Health history data is sensitive. When building on Vitamem:
+
+1. **Use encrypted storage** — `SupabaseAdapter` with Row Level Security enabled
+2. **Scope memories to users** — Vitamem already scopes all memories by `userId`
+3. **Right to deletion** — Use `deleteUserData(userId)` to remove all memories for a user (GDPR/CCPA compliance)
+4. **Minimize retention** — Use `closedTimeoutMs` with `sweepThreads()` to automatically close old threads
+5. **Don't store PHI without safeguards** — if you're handling Protected Health Information, consult a compliance specialist
+
+See [SECURITY.md](https://github.com/yuw321/Vitamem/blob/main/SECURITY.md) for our security policy.

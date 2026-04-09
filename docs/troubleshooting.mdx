@@ -1,0 +1,264 @@
+---
+title: Troubleshooting
+description: Common issues when using Vitamem and how to resolve them.
+---
+
+# Troubleshooting
+
+This page covers common issues encountered when integrating Vitamem, along with their causes and solutions.
+
+## "Rate limited during dormant transition"
+
+**Symptom:** The embedding pipeline fails with a 429 (rate limit) error from your embedding provider during a dormant transition or `sweepThreads()` call.
+
+**Cause:** When a thread transitions to dormant, Vitamem embeds every extracted fact. If a conversation produced many facts, all embeddings are requested in parallel, exceeding your API rate limit.
+
+**Solution:** Set `embeddingConcurrency` in your config to limit parallel embedding API calls:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseKey: process.env.SUPABASE_KEY,
+  embeddingConcurrency: 3, // default is 5; lower this for stricter rate limits
+});
+```
+
+The default concurrency is **5**. For free-tier or low-limit API plans, try `2` or `3`. The embedding pipeline uses a worker pool pattern, so reducing concurrency does not change the result -- it only spreads the API calls over more time.
+
+If you are using Ollama locally, you can usually increase this since there are no rate limits (only hardware constraints):
+
+```typescript
+embeddingConcurrency: 10, // Ollama running locally
+```
+
+---
+
+## "Memories not appearing in retrieval"
+
+**Symptom:** `retrieve()` returns an empty array or does not include facts you expected from a previous conversation.
+
+**Cause:** Memories are only extracted and embedded when a thread transitions to **dormant**. If the thread is still `active` or `cooling`, no memories have been saved yet.
+
+**Steps to diagnose:**
+
+1. Check the thread state:
+```typescript
+const thread = await mem.getThread(threadId);
+console.log(thread?.state);
+// If 'active' or 'cooling', memories have not been extracted yet
+```
+
+2. If the thread is still active, trigger the transition explicitly:
+```typescript
+await mem.triggerDormantTransition(threadId);
+```
+
+3. If the thread is dormant but memories are still missing, the extraction prompt may not have identified any facts. Check that the conversation contained factual statements the LLM could extract (not just greetings or questions).
+
+4. If memories exist but retrieval returns nothing, the similarity scores may be below the default threshold. Try a broader query:
+```typescript
+const memories = await mem.retrieve({
+  userId,
+  query: "everything about this user",
+  limit: 20,
+});
+console.log(memories); // Check scores
+```
+
+---
+
+## "Ollama connection refused"
+
+**Symptom:** Error `ECONNREFUSED 127.0.0.1:11434` when using `provider: "ollama"`.
+
+**Cause:** The Ollama server is not running, or it is running on a different port or host.
+
+**Steps to resolve:**
+
+1. Verify Ollama is installed and running:
+```bash
+ollama list
+# Should show available models
+```
+
+2. If Ollama is running but on a different port or host, set `baseUrl`:
+```typescript
+const mem = await createVitamem({
+  provider: "ollama",
+  storage: "ephemeral",
+  baseUrl: "http://192.168.1.100:11434/v1", // custom host/port
+});
+```
+
+3. Ensure the required models are pulled:
+```bash
+ollama pull llama3.2           # default chat model
+ollama pull nomic-embed-text   # default embedding model
+```
+
+4. If running Ollama in Docker, make sure port 11434 is mapped and accessible from your application container.
+
+---
+
+## "Duplicate memories"
+
+**Symptom:** The same fact appears multiple times in retrieval results (e.g., "Has Type 2 diabetes" stored three times).
+
+**Cause:** Vitamem deduplicates using cosine similarity with a default threshold of 0.92. Facts that are semantically similar but phrased differently may fall below this threshold and be treated as unique.
+
+**Solutions:**
+
+1. The deduplication threshold is currently set at `0.92` in the embedding pipeline. If you are seeing near-duplicates, you may want to lower this by providing a custom adapter or modifying the pipeline call in your fork.
+
+2. Use the `deleteMemory()` method to remove specific duplicate entries:
+```typescript
+// Find the duplicate by inspecting memories
+const memories = await mem.retrieve({
+  userId,
+  query: "diabetes",
+  limit: 20,
+});
+
+// Delete the duplicate(s)
+await mem.deleteMemory("memory-id-of-duplicate");
+```
+
+3. Consider whether your extraction prompt is producing overly specific variations. A prompt that extracts "Takes metformin" and "Takes metformin 500mg" will produce two memories because they are semantically distinct. Tune your extraction prompt to normalize fact format.
+
+---
+
+## "sweepThreads() throws: requires getThreadsByState"
+
+**Symptom:** Calling `sweepThreads()` throws `"sweepThreads() requires a storage adapter that implements getThreadsByState()."`.
+
+**Cause:** Your custom storage adapter does not implement the optional `getThreadsByState()` method.
+
+**Solution:** Implement `getThreadsByState` on your adapter. See the [custom storage guide](/docs/guides/custom-storage) for details:
+
+```typescript
+async getThreadsByState(state: ThreadState): Promise<Thread[]> {
+  // Return all threads matching the given state
+}
+```
+
+Both `EphemeralAdapter` and `SupabaseAdapter` implement this method out of the box.
+
+---
+
+## "deleteMemory() throws: requires deleteMemory"
+
+**Symptom:** Calling `mem.deleteMemory()` or `mem.deleteUserData()` throws an error about the storage adapter.
+
+**Cause:** Your storage adapter does not implement the optional `deleteMemory()` or `deleteUserMemories()` methods.
+
+**Solution:** Implement the optional methods on your adapter. These are required for GDPR compliance:
+
+```typescript
+async deleteMemory(memoryId: string): Promise<void> {
+  // Delete a single memory by ID
+}
+
+async deleteUserMemories(userId: string): Promise<void> {
+  // Delete all memories for a user
+}
+```
+
+---
+
+## GDPR / Data Deletion Patterns
+
+Vitamem provides two methods for data deletion to support GDPR "right to erasure" requests.
+
+### Deleting a Single Memory
+
+If a user wants a specific fact removed:
+
+```typescript
+// 1. Retrieve memories to find the one to delete
+const memories = await mem.retrieve({
+  userId: "user-123",
+  query: "the fact they want removed",
+  limit: 10,
+});
+
+// 2. Show the user what was found, let them confirm
+// 3. Delete the specific memory
+await mem.deleteMemory(memoryId);
+```
+
+### Deleting All User Data
+
+For a full erasure request:
+
+```typescript
+await mem.deleteUserData("user-123");
+// All memories for this user are permanently removed
+```
+
+<Warning>
+`deleteUserData()` only deletes memories from the memory store. Thread records and messages are not deleted by this method. If your application needs to delete threads and messages as well (for full GDPR compliance), implement that deletion in your storage adapter or application layer.
+</Warning>
+
+### Audit Logging
+
+For compliance, consider logging deletion events:
+
+```typescript
+app.post("/api/gdpr/erase", async (req, res) => {
+  const { userId } = req.body;
+
+  await mem.deleteUserData(userId);
+
+  // Log the erasure for compliance records
+  await auditLog.record({
+    action: "gdpr_erasure",
+    userId,
+    timestamp: new Date().toISOString(),
+    requestedBy: req.auth.adminId,
+  });
+
+  res.json({ ok: true, message: "All user memories deleted." });
+});
+```
+
+---
+
+## "Thread not found" Errors
+
+**Symptom:** `chat()`, `triggerDormantTransition()`, or `closeThread()` throws `"Thread not found: <id>"`.
+
+**Cause:** The thread ID does not exist in your storage backend. Common causes:
+
+- Using `EphemeralAdapter` and the process restarted (all data is lost)
+- The thread ID is stale or from a different environment
+- A typo in the thread ID
+
+**Solution:** Always check for thread existence if the ID comes from external input:
+
+```typescript
+const thread = await mem.getThread(threadId);
+if (!thread) {
+  return res.status(404).json({ error: "Thread not found" });
+}
+```
+
+For production, use `SupabaseAdapter` or another persistent storage adapter.
+
+---
+
+## "Cannot close thread in state: active"
+
+**Symptom:** `closeThread()` throws because the thread is not in the `dormant` state.
+
+**Cause:** Threads can only be closed from the `dormant` state. The valid path is `active -> cooling -> dormant -> closed`.
+
+**Solution:** Transition to dormant first:
+
+```typescript
+// If you need to close immediately
+await mem.triggerDormantTransition(threadId); // moves to dormant
+await mem.closeThread(threadId); // now this works
+```

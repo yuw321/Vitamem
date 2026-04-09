@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memory Extraction | Vitamem Docs</title>
+    <meta name="description" content="How Vitamem extracts and classifies facts from conversations." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Memory Extraction</h1>
+      <p class="description">How Vitamem extracts and classifies facts from conversations.</p>
+      <h1>Memory Extraction</h1>
+<p>When a thread transitions to <strong>dormant</strong>, Vitamem extracts the meaningful facts from the conversation using your LLM adapter. This is the core operation that turns raw conversation history into a searchable memory store.</p>
+<h2>How Extraction Works</h2>
+<p>The extraction pipeline calls <code>llm.extractMemories(messages)</code> with the full conversation history. Your LLM adapter is responsible for returning an array of structured facts:</p>
+<pre><code class="language-typescript">// What the LLM adapter returns
+[
+  { content: &quot;Has Type 2 diabetes&quot;, source: &quot;confirmed&quot; },
+  { content: &quot;Takes metformin 500mg twice daily&quot;, source: &quot;confirmed&quot; },
+  { content: &quot;Exercises 3 times per week&quot;, source: &quot;inferred&quot; },
+  { content: &quot;Prefers morning check-ins&quot;, source: &quot;inferred&quot; },
+]
+</code></pre>
+<h2>Memory Sources</h2>
+<p>Facts are classified by how confident we are they represent ground truth:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Meaning</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>confirmed</code></td>
+<td>User explicitly stated this</td>
+<td>"I take metformin daily"</td>
+</tr>
+<tr>
+<td><code>inferred</code></td>
+<td>Derived from context or assistant messages</td>
+<td>Assistant noted the user seemed stressed</td>
+</tr>
+</tbody>
+</table>
+<p>This classification helps downstream systems apply appropriate confidence when using memories to personalize responses.</p>
+<h2>The Built-in Extraction Prompt</h2>
+<p>When using the built-in adapter factories (<code>createOpenAIAdapter</code>, <code>createAnthropicAdapter</code>, <code>createOllamaAdapter</code>), Vitamem includes a default extraction prompt optimized for health companion use cases.</p>
+<p>The OpenAI/Ollama default prompt:</p>
+<pre><code>Extract key facts from this conversation that are worth remembering long-term.
+Focus on: health conditions, medications, lifestyle habits, goals, preferences,
+and personal context.
+
+Conversation:
+{conversation}
+
+Return a JSON array only (no markdown, no explanation):
+[{ &quot;content&quot;: &quot;brief factual statement&quot;, &quot;source&quot;: &quot;confirmed&quot; | &quot;inferred&quot; }]
+
+Guidelines:
+- &quot;confirmed&quot; = user directly stated this fact
+- &quot;inferred&quot; = you derived this from context
+- Skip greetings, questions, and one-time events
+- Be specific (include numbers, dosages, dates when mentioned)
+</code></pre>
+<p>The Anthropic adapter uses a similar prompt with additional health-specific categories (vital signs, care team, family history).</p>
+<p>The <code>{conversation}</code> placeholder is replaced with the formatted conversation history at extraction time.</p>
+<h2>Customizing the Extraction Prompt</h2>
+<p>You can override the default extraction prompt by passing <code>extractionPrompt</code> to any adapter factory:</p>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  model: &quot;gpt-4o&quot;,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<p>To customize the prompt, use the adapter factory directly:</p>
+<pre><code class="language-typescript">import { createVitamem, createOpenAIAdapter } from &quot;vitamem&quot;;
+
+const llm = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  chatModel: &quot;gpt-4o&quot;,
+  extractionPrompt: `You are a fitness coach assistant. Extract facts about this person's
+fitness journey from the conversation.
+
+Focus on:
+- Exercise routines and frequency
+- Personal records and progress
+- Injuries or physical limitations
+- Nutritional preferences and diet plans
+- Competition goals and timelines
+
+Conversation:
+{conversation}
+
+Return a JSON array only:
+[{ &quot;content&quot;: &quot;specific factual statement&quot;, &quot;source&quot;: &quot;confirmed&quot; | &quot;inferred&quot; }]
+
+- &quot;confirmed&quot; = user directly stated this
+- &quot;inferred&quot; = derived from context
+- Skip greetings and small talk
+- Include specific numbers (weights, reps, times) when mentioned`,
+});
+
+const mem = await createVitamem({
+  llm,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<h3>Prompt Requirements</h3>
+<p>Your custom extraction prompt must:</p>
+<ol>
+<li>Include <code>{conversation}</code> where the formatted messages should be inserted</li>
+<li>Instruct the LLM to return a JSON array of <code>{ content, source }</code> objects</li>
+<li>Define what <code>"confirmed"</code> and <code>"inferred"</code> mean for your domain</li>
+</ol>
+<h3>Tips for Effective Extraction Prompts</h3>
+<ul>
+<li><strong>Be domain-specific.</strong> A fitness app should extract different facts than a therapy companion.</li>
+<li><strong>List categories.</strong> Explicitly tell the LLM what kinds of facts to look for.</li>
+<li><strong>Include negative examples.</strong> Tell the LLM what to skip (greetings, questions, opinions).</li>
+<li><strong>Request specificity.</strong> Ask for numbers, dates, and dosages instead of vague statements.</li>
+</ul>
+<h2>Writing a Fully Custom Adapter</h2>
+<p>If you need complete control over extraction logic (not just the prompt), implement the <code>LLMAdapter</code> interface directly:</p>
+<pre><code class="language-typescript">const customLLM: LLMAdapter = {
+  async chat(messages) {
+    // Your chat implementation
+  },
+  async extractMemories(messages) {
+    // Your custom extraction logic
+    // Can use multiple LLM calls, rule-based filtering, etc.
+  },
+  async embed(text) {
+    // Your embedding implementation
+  },
+};
+
+const mem = await createVitamem({
+  llm: customLLM,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<h2>Fallback: Rule-Based Extraction</h2>
+<p>Vitamem also exports a simple rule-based extractor (<code>extractFactsSimple</code>) that does not require an LLM. It classifies user messages as <code>confirmed</code> and assistant messages as <code>inferred</code>, looking for sentences containing personal pronouns and action verbs.</p>
+<pre><code class="language-typescript">import { extractFactsSimple } from &quot;vitamem&quot;;
+
+const facts = extractFactsSimple(messages);
+// [{ content: &quot;I take metformin daily&quot;, source: &quot;confirmed&quot; }, ...]
+</code></pre>
+<p>This is useful for testing but produces lower-quality memories than LLM extraction.</p>
+<h2>What Gets Stored</h2>
+<p>After extraction, each fact goes through the <a href="deduplication.html">deduplication pipeline</a> before being saved. Only facts that are genuinely new (not already represented in the user's memory store) are persisted.</p>
+<p>The final stored memory includes:
+- <code>content</code> -- the fact text
+- <code>source</code> -- <code>confirmed</code> or <code>inferred</code>
+- <code>embedding</code> -- the vector representation (e.g., 1536 dimensions for <code>text-embedding-3-small</code>)
+- <code>userId</code> -- for retrieval scoping
+- <code>threadId</code> -- for traceability</p>
+      <p class="source-note">Source: <code>concepts/memory-extraction.mdx</code></p>
+    </main>
+  </body>
+</html>

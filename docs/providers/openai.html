@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenAI | Vitamem Docs</title>
+    <meta name="description" content="Use OpenAI (or any OpenAI-compatible API) as the LLM provider for Vitamem." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>OpenAI</h1>
+      <p class="description">Use OpenAI (or any OpenAI-compatible API) as the LLM provider for Vitamem.</p>
+      <h2>Installation</h2>
+<p>Install the Vitamem package and the OpenAI peer dependency:</p>
+<pre><code class="language-bash">npm install vitamem openai
+</code></pre>
+<h2>Quick Setup</h2>
+<p>The fastest way to get started with OpenAI:</p>
+<pre><code class="language-typescript">import { createVitamem } from &quot;vitamem&quot;;
+
+const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<p>This uses the default models: <strong>gpt-5.4-mini</strong> for chat and extraction, <strong>text-embedding-3-small</strong> for embeddings.</p>
+<h2>Adapter Factory</h2>
+<p>For full control, use <code>createOpenAIAdapter</code> directly:</p>
+<pre><code class="language-typescript">import { createOpenAIAdapter, createVitamem } from &quot;vitamem&quot;;
+
+const llm = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  chatModel: &quot;gpt-5.4-mini&quot;,
+  embeddingModel: &quot;text-embedding-3-small&quot;,
+});
+
+const mem = await createVitamem({
+  llm,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<h3>Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiKey</code></td>
+<td><code>string</code></td>
+<td><strong>required</strong></td>
+<td>Your OpenAI API key.</td>
+</tr>
+<tr>
+<td><code>chatModel</code></td>
+<td><code>string</code></td>
+<td><code>"gpt-5.4-mini"</code></td>
+<td>Model used for chat completions and memory extraction.</td>
+</tr>
+<tr>
+<td><code>embeddingModel</code></td>
+<td><code>string</code></td>
+<td><code>"text-embedding-3-small"</code></td>
+<td>Model used for text embeddings.</td>
+</tr>
+<tr>
+<td><code>baseUrl</code></td>
+<td><code>string</code></td>
+<td><code>undefined</code></td>
+<td>Override the API base URL (see below).</td>
+</tr>
+<tr>
+<td><code>extractionPrompt</code></td>
+<td><code>string</code></td>
+<td>Built-in prompt</td>
+<td>Custom prompt for memory extraction. Must include a <code>{conversation}</code> placeholder.</td>
+</tr>
+</tbody>
+</table>
+<h2>Choosing Models</h2>
+<h3>Chat Models</h3>
+<p>Any model available through the OpenAI chat completions API works. Common choices:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gpt-5.4-mini</code></td>
+<td>Default. Fast, cost-effective, good extraction quality.</td>
+</tr>
+<tr>
+<td><code>gpt-4o</code></td>
+<td>Higher accuracy on nuanced health conversations.</td>
+</tr>
+<tr>
+<td><code>gpt-4o-mini</code></td>
+<td>Balance of speed and capability.</td>
+</tr>
+<tr>
+<td><code>o3-mini</code></td>
+<td>Reasoning-focused tasks.</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-typescript">const llm = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  chatModel: &quot;gpt-4o&quot;,
+});
+</code></pre>
+<h3>Embedding Models</h3>
+<p>The embedding model determines the vector dimensions stored in your database. If you change the embedding model after memories have been saved, existing embeddings will not be compatible with new ones.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Dimensions</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text-embedding-3-small</code></td>
+<td>1536</td>
+<td>Default. Good quality at low cost.</td>
+</tr>
+<tr>
+<td><code>text-embedding-3-large</code></td>
+<td>3072</td>
+<td>Higher accuracy, double the storage.</td>
+</tr>
+</tbody>
+</table>
+<p><Warning>
+  Changing the embedding model after memories have been stored will produce
+  vectors in a different space. Similarity search across old and new embeddings
+  will not work correctly. Re-embed existing memories if you switch models.
+</Warning></p>
+<h2>Using with OpenAI-Compatible APIs</h2>
+<p>The <code>baseUrl</code> option lets you point the adapter at any API that implements the OpenAI chat completions and embeddings endpoints. This is useful for proxies, self-hosted models, or enterprise gateways.</p>
+<h3>Azure OpenAI</h3>
+<pre><code class="language-typescript">const llm = createOpenAIAdapter({
+  apiKey: process.env.AZURE_OPENAI_API_KEY!,
+  baseUrl: &quot;https://your-resource.openai.azure.com/openai/deployments/your-deployment&quot;,
+  chatModel: &quot;gpt-4o&quot;,
+});
+</code></pre>
+<h3>LM Studio</h3>
+<pre><code class="language-typescript">const llm = createOpenAIAdapter({
+  apiKey: &quot;lm-studio&quot;, // LM Studio does not require a real key
+  baseUrl: &quot;http://localhost:1234/v1&quot;,
+  chatModel: &quot;your-loaded-model&quot;,
+  embeddingModel: &quot;your-embedding-model&quot;,
+});
+</code></pre>
+<h3>vLLM</h3>
+<pre><code class="language-typescript">const llm = createOpenAIAdapter({
+  apiKey: &quot;vllm&quot;,
+  baseUrl: &quot;http://localhost:8000/v1&quot;,
+  chatModel: &quot;meta-llama/Llama-3-8b-chat-hf&quot;,
+});
+</code></pre>
+<p><Tip>
+  For local models via Ollama, use the dedicated <a href="ollama.html">Ollama adapter</a>
+  instead. It provides sensible defaults and zero-config setup.
+</Tip></p>
+<h2>Custom Extraction Prompt</h2>
+<p>The extraction prompt controls how the LLM identifies facts worth remembering from a conversation. The default prompt is tuned for health companions, focusing on conditions, medications, lifestyle, and goals.</p>
+<p>To customize it, pass an <code>extractionPrompt</code> string. It must include the <code>{conversation}</code> placeholder, which Vitamem replaces with the formatted message history.</p>
+<pre><code class="language-typescript">const llm = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  extractionPrompt: `Extract health-related facts from this conversation.
+Focus on: diagnoses, medications, vitals, and care preferences.
+
+Conversation:
+{conversation}
+
+Return a JSON array only (no markdown, no explanation):
+[{ &quot;content&quot;: &quot;brief factual statement&quot;, &quot;source&quot;: &quot;confirmed&quot; | &quot;inferred&quot; }]`,
+});
+</code></pre>
+<h2>Config Shortcut</h2>
+<p>When using the string shortcut via <code>createVitamem</code>, you can override models with the <code>model</code> and <code>embeddingModel</code> fields:</p>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: &quot;gpt-4o&quot;,
+  embeddingModel: &quot;text-embedding-3-large&quot;,
+  storage: &quot;ephemeral&quot;,
+});
+</code></pre>
+<h2>Peer Dependency</h2>
+<p>The OpenAI adapter lazy-loads the <code>openai</code> SDK at runtime. It is listed as an optional peer dependency of Vitamem:</p>
+<pre><code class="language-json">{
+  &quot;peerDependencies&quot;: {
+    &quot;openai&quot;: &quot;&gt;=4.0.0&quot;
+  }
+}
+</code></pre>
+<p>If the <code>openai</code> package is not installed and you attempt to use the OpenAI adapter, you will get a module resolution error at runtime.</p>
+<h2>Next Steps</h2>
+<ul>
+<li><a href="anthropic.html">Anthropic Provider</a> -- use Claude for chat with OpenAI embeddings</li>
+<li><a href="ollama.html">Ollama Provider</a> -- run models locally with zero config</li>
+<li><a href="custom-llm-adapter.html">Custom LLM Adapter</a> -- implement the interface for any provider</li>
+</ul>
+      <p class="source-note">Source: <code>providers/openai.mdx</code></p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <style>
+      .thread-line { fill: none; stroke: #e2e8f0; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .dot-active { fill: #e2e8f0; }
+      .dot-cooling { fill: #94a3b8; }
+      .dot-dormant { fill: #64748b; }
+    </style>
+  </defs>
+  <!-- Dark mode variant -->
+  <path class="thread-line" d="
+    M 80 256
+    C 120 256, 140 180, 180 180
+    C 220 180, 220 256, 256 256
+    C 292 256, 292 332, 332 332
+    C 372 332, 372 256, 400 256
+    C 420 256, 430 220, 420 200
+    C 410 180, 388 180, 384 200
+    C 380 220, 392 232, 400 228
+  " />
+  <circle class="dot-active" cx="180" cy="180" r="10" />
+  <circle class="dot-cooling" cx="256" cy="256" r="8" />
+  <circle class="dot-dormant" cx="332" cy="332" r="6" />
+  <circle class="dot-active" cx="400" cy="228" r="4" />
+</svg>

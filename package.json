@@ -1,0 +1,79 @@
+{
+  "name": "vitamem",
+  "version": "1.0.0",
+  "description": "Memory for AI health companions — lifecycle-aware threads that remember the rhythm of care.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc",
+    "docs:build": "python3 scripts/generate-doc-pages.py"
+  },
+  "keywords": [
+    "ai",
+    "memory",
+    "health",
+    "companion",
+    "counseling",
+    "therapy",
+    "wellness",
+    "llm",
+    "threads",
+    "conversation",
+    "embeddings",
+    "typescript",
+    "mental-health"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuw321/Vitamem.git"
+  },
+  "homepage": "https://vitamem.dev",
+  "bugs": {
+    "url": "https://github.com/yuw321/Vitamem/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30.0",
+    "@supabase/supabase-js": ">=2.0.0",
+    "openai": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "@supabase/supabase-js": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@supabase/supabase-js": "^2.101.1",
+    "@types/node": "^25.5.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "openai": "^6.33.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

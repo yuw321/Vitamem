@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Types | Vitamem Docs</title>
+    <meta name="description" content="TypeScript interfaces and types exported by Vitamem." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Types</h1>
+      <p class="description">TypeScript interfaces and types exported by Vitamem.</p>
+      <h1>Types</h1>
+<p>All types are exported from <code>vitamem</code> and are available as TypeScript types.</p>
+<h2>Core Types</h2>
+<h3><code>Thread</code></h3>
+<p>Represents a conversation thread and its lifecycle state.</p>
+<pre><code class="language-typescript">interface Thread {
+  id: string;
+  userId: string;
+  state: ThreadState; // 'active' | 'cooling' | 'dormant' | 'closed'
+  messages: Message[];
+  createdAt: Date;
+  updatedAt: Date;
+  lastMessageAt: Date | null;
+  coolingStartedAt: Date | null;
+  dormantAt: Date | null;
+  closedAt: Date | null;
+}
+</code></pre>
+<h3><code>ThreadState</code></h3>
+<pre><code class="language-typescript">type ThreadState = &quot;active&quot; | &quot;cooling&quot; | &quot;dormant&quot; | &quot;closed&quot;;
+</code></pre>
+<h3><code>Message</code></h3>
+<pre><code class="language-typescript">interface Message {
+  id: string;
+  threadId: string;
+  role: &quot;user&quot; | &quot;assistant&quot; | &quot;system&quot;;
+  content: string;
+  createdAt: Date;
+}
+</code></pre>
+<h3><code>Memory</code></h3>
+<p>A stored fact about a user, with its embedding vector.</p>
+<pre><code class="language-typescript">interface Memory {
+  id: string;
+  userId: string;
+  threadId: string;
+  content: string;
+  source: MemorySource; // 'confirmed' | 'inferred'
+  embedding: number[] | null;
+  createdAt: Date;
+}
+</code></pre>
+<h3><code>MemoryMatch</code></h3>
+<p>A memory returned from <code>retrieve()</code>, including its similarity score.</p>
+<pre><code class="language-typescript">interface MemoryMatch {
+  content: string;
+  source: MemorySource;
+  score: number; // 0–1 cosine similarity
+}
+</code></pre>
+<h3><code>MemorySource</code></h3>
+<pre><code class="language-typescript">type MemorySource = &quot;confirmed&quot; | &quot;inferred&quot;;
+</code></pre>
+<hr />
+<h2>Adapter Interfaces</h2>
+<h3><code>LLMAdapter</code></h3>
+<pre><code class="language-typescript">interface LLMAdapter {
+  chat(messages: Array&lt;{ role: string; content: string }&gt;): Promise&lt;string&gt;;
+  extractMemories(
+    messages: Message[],
+  ): Promise&lt;Array&lt;{ content: string; source: MemorySource }&gt;&gt;;
+  embed(text: string): Promise&lt;number[]&gt;;
+}
+</code></pre>
+<h3><code>StorageAdapter</code></h3>
+<pre><code class="language-typescript">interface StorageAdapter {
+  createThread(userId: string): Promise&lt;Thread&gt;;
+  getThread(threadId: string): Promise&lt;Thread | null&gt;;
+  updateThread(thread: Thread): Promise&lt;Thread&gt;;
+  addMessage(
+    threadId: string,
+    role: Message[&quot;role&quot;],
+    content: string,
+  ): Promise&lt;Message&gt;;
+  getMessages(threadId: string): Promise&lt;Message[]&gt;;
+  saveMemory(memory: Omit&lt;Memory, &quot;id&quot; | &quot;createdAt&quot;&gt;): Promise&lt;Memory&gt;;
+  getMemories(userId: string): Promise&lt;Memory[]&gt;;
+  searchMemories(
+    userId: string,
+    embedding: number[],
+    limit?: number,
+  ): Promise&lt;MemoryMatch[]&gt;;
+}
+</code></pre>
+<hr />
+<h3><code>StorageAdapter</code> (updated)</h3>
+<p>The current interface includes optional methods for <code>sweepThreads()</code> and GDPR deletion:</p>
+<pre><code class="language-typescript">interface StorageAdapter {
+  createThread(userId: string): Promise&lt;Thread&gt;;
+  getThread(threadId: string): Promise&lt;Thread | null&gt;;
+  getThreadsByState?(state: ThreadState): Promise&lt;Thread[]&gt;;
+  updateThread(thread: Thread): Promise&lt;Thread&gt;;
+  addMessage(threadId: string, role: Message[&quot;role&quot;], content: string): Promise&lt;Message&gt;;
+  getMessages(threadId: string): Promise&lt;Message[]&gt;;
+  saveMemory(memory: Omit&lt;Memory, &quot;id&quot; | &quot;createdAt&quot;&gt;): Promise&lt;Memory&gt;;
+  getMemories(userId: string): Promise&lt;Memory[]&gt;;
+  searchMemories(userId: string, embedding: number[], limit?: number): Promise&lt;MemoryMatch[]&gt;;
+  deleteMemory?(memoryId: string): Promise&lt;void&gt;;
+  deleteUserMemories?(userId: string): Promise&lt;void&gt;;
+}
+</code></pre>
+<p>See the full <a href="storage-adapter.html">Storage Adapter reference</a> for details on each method.</p>
+<hr />
+<h2>Configuration</h2>
+<h3><code>VitamemConfig</code></h3>
+<p>The unified config object passed to <code>createVitamem()</code>. Provide either a <code>provider</code> string or an <code>llm</code> adapter instance.</p>
+<pre><code class="language-typescript">type ProviderName = &quot;openai&quot; | &quot;anthropic&quot; | &quot;ollama&quot;;
+
+interface VitamemConfig {
+  // LLM — string shortcut OR adapter instance (one required)
+  provider?: ProviderName;
+  apiKey?: string;
+  model?: string;
+  embeddingModel?: string;
+  baseUrl?: string;
+  llm?: LLMAdapter;
+
+  // Storage — string shortcut OR adapter instance (required)
+  storage: &quot;ephemeral&quot; | &quot;supabase&quot; | StorageAdapter;
+  supabaseUrl?: string;
+  supabaseKey?: string;
+
+  // Behavioral settings
+  coolingTimeoutMs?: number;       // default: 6 hours (21600000)
+  closedTimeoutMs?: number;        // default: 30 days (2592000000)
+  embeddingConcurrency?: number;   // default: 5
+  autoRetrieve?: boolean;          // default: false
+}
+</code></pre>
+<p>See <a href="create-vitamem.html">createVitamem</a> for full details on each option.</p>
+<hr />
+<h2>Facade Interface</h2>
+<h3><code>Vitamem</code></h3>
+<p>The object returned by <code>createVitamem()</code>.</p>
+<pre><code class="language-typescript">interface Vitamem {
+  createThread(opts: { userId: string }): Promise&lt;Thread&gt;;
+  chat(opts: {
+    threadId: string;
+    message: string;
+    systemPrompt?: string;
+  }): Promise&lt;{ reply: string; thread: Thread; memories?: MemoryMatch[] }&gt;;
+  retrieve(opts: { userId: string; query: string; limit?: number }): Promise&lt;MemoryMatch[]&gt;;
+  getThread(threadId: string): Promise&lt;Thread | null&gt;;
+  triggerDormantTransition(threadId: string): Promise&lt;void&gt;;
+  closeThread(threadId: string): Promise&lt;void&gt;;
+  sweepThreads(): Promise&lt;void&gt;;
+  deleteMemory(memoryId: string): Promise&lt;void&gt;;
+  deleteUserData(userId: string): Promise&lt;void&gt;;
+}
+</code></pre>
+      <p class="source-note">Source: <code>api-reference/types.mdx</code></p>
+    </main>
+  </body>
+</html>

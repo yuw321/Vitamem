@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Installation | Vitamem Docs</title>
+    <meta name="description" content="Install Vitamem and configure your LLM provider." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../index.html#documentation">Home</a>
+          <a href="../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Installation</h1>
+      <p class="description">Install Vitamem and configure your LLM provider.</p>
+      <h2>Install Vitamem</h2>
+<pre><code class="language-bash">npm install vitamem
+</code></pre>
+<p>Vitamem requires <strong>Node.js 18 or later</strong>.</p>
+<h2>Provider Setup</h2>
+<p>Vitamem ships built-in adapters for OpenAI, Anthropic, and Ollama. Install the peer dependency for your chosen provider.</p>
+<p><Tabs>
+  <Tab title="OpenAI">
+    <code>bash
+    npm install openai</code></p>
+<pre><code>```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+```
+
+Default models: `gpt-5.4-mini` (chat) and `text-embedding-3-small` (embeddings).
+</code></pre>
+<p></Tab>
+  <Tab title="Anthropic">
+    <code>bash
+    npm install @anthropic-ai/sdk</code></p>
+<pre><code>```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  storage: "ephemeral",
+});
+```
+
+&lt;Note&gt;
+  The Anthropic adapter uses OpenAI-compatible embeddings under the hood,
+  so the `apiKey` is used for both chat and embedding calls.
+&lt;/Note&gt;
+</code></pre>
+<p></Tab>
+  <Tab title="Ollama (local)">
+    <code>bash
+    # No npm peer dependency needed — Ollama uses HTTP
+    ollama pull llama3
+    ollama pull nomic-embed-text</code></p>
+<pre><code>```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "ollama",
+  storage: "ephemeral",
+});
+```
+
+No API key required. Defaults to `http://localhost:11434`.
+</code></pre>
+<p></Tab>
+</Tabs></p>
+<h2>Peer Dependencies</h2>
+<p>All provider SDKs are <strong>optional</strong> peer dependencies. You only need to install the one you use.</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Peer dependency</th>
+<th>Minimum version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenAI</td>
+<td><code>openai</code></td>
+<td>&gt;= 4.0.0</td>
+</tr>
+<tr>
+<td>Anthropic</td>
+<td><code>@anthropic-ai/sdk</code></td>
+<td>&gt;= 0.30.0</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td>None</td>
+<td>--</td>
+</tr>
+<tr>
+<td>Supabase</td>
+<td><code>@supabase/supabase-js</code></td>
+<td>&gt;= 2.0.0</td>
+</tr>
+</tbody>
+</table>
+<h2>TypeScript Setup</h2>
+<p>Vitamem is written in TypeScript and ships with full type declarations. No additional <code>@types</code> package is needed.</p>
+<p>Recommended <code>tsconfig.json</code> settings:</p>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;target&quot;: &quot;ES2022&quot;,
+    &quot;module&quot;: &quot;ESNext&quot;,
+    &quot;moduleResolution&quot;: &quot;bundler&quot;,
+    &quot;strict&quot;: true,
+    &quot;esModuleInterop&quot;: true
+  }
+}
+</code></pre>
+<p>Vitamem is published as ESM (<code>"type": "module"</code>). If your project uses CommonJS, you may need to use dynamic <code>import()</code> or switch to ESM.</p>
+<h2>Storage Backends</h2>
+<p>Vitamem supports two built-in storage options:</p>
+<ul>
+<li><strong><code>"ephemeral"</code></strong> -- In-memory storage. Data is lost when the process exits. Great for development and testing.</li>
+<li><strong><code>"supabase"</code></strong> -- Persistent storage backed by Supabase (Postgres + pgvector). Use this for production.</li>
+</ul>
+<pre><code class="language-typescript">// Development
+const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: &quot;ephemeral&quot;,
+});
+
+// Production
+const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: &quot;supabase&quot;,
+  supabaseUrl: process.env.SUPABASE_URL!,
+  supabaseKey: process.env.SUPABASE_KEY!,
+});
+</code></pre>
+<p>You can also pass a custom <code>StorageAdapter</code> instance for other backends. See <a href="guides/custom-storage.html">Custom Storage</a>.</p>
+<h2>Next Steps</h2>
+<p><CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="quickstart.html">
+    Build your first health companion in 5 minutes
+  </Card>
+  <Card title="Tutorial" icon="graduation-cap" href="tutorial-first-project.html">
+    Step-by-step guide to building a health companion from scratch
+  </Card>
+</CardGroup></p>
+      <p class="source-note">Source: <code>installation.mdx</code></p>
+    </main>
+  </body>
+</html>

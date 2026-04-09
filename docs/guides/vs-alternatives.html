@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vitamem vs. Alternatives | Vitamem Docs</title>
+    <meta name="description" content="How Vitamem compares to Mem0, Zep, Letta, and LangChain Memory." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Vitamem vs. Alternatives</h1>
+      <p class="description">How Vitamem compares to Mem0, Zep, Letta, and LangChain Memory.</p>
+      <h1>Vitamem vs. Alternatives</h1>
+<h2>Summary</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Vitamem</th>
+<th>Mem0</th>
+<th>Zep</th>
+<th>Letta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Health-specific design</strong></td>
+<td>✅ Yes</td>
+<td>❌ General purpose</td>
+<td>❌ General purpose</td>
+<td>❌ General purpose</td>
+</tr>
+<tr>
+<td><strong>Thread lifecycle states</strong></td>
+<td>✅ Yes</td>
+<td>❌ No</td>
+<td>❌ No</td>
+<td>❌ No</td>
+</tr>
+<tr>
+<td><strong>Embedding cost model</strong></td>
+<td>Once at dormant</td>
+<td>Per-message or periodic</td>
+<td>Knowledge graph</td>
+<td>Per-memory block</td>
+</tr>
+<tr>
+<td><strong>Zero production deps</strong></td>
+<td>✅ Yes</td>
+<td>❌ Many</td>
+<td>❌ Many</td>
+<td>❌ Many</td>
+</tr>
+<tr>
+<td><strong>TypeScript-native</strong></td>
+<td>✅ Yes</td>
+<td>Python-first</td>
+<td>Python + TS</td>
+<td>Python-first</td>
+</tr>
+<tr>
+<td><strong>Self-hosted</strong></td>
+<td>✅ Always</td>
+<td>Optional</td>
+<td>Optional</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>HIPAA-friendly architecture</strong></td>
+<td>✅ Lifecycle = less processing</td>
+<td>❌ No</td>
+<td>Paid tier only</td>
+<td>❌ No</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Vitamem vs. Mem0</h2>
+<p><a href="https://github.com/mem0ai/mem0">Mem0</a> is the most popular open-source AI memory library (51k+ stars). It's excellent for general-purpose AI personalization.</p>
+<p><strong>Choose Vitamem if:</strong>
+- You're building a health companion or counseling AI
+- You want the conversation lifecycle to match clinical patterns (sessions, breaks, discharge)
+- You need TypeScript-native with zero production dependencies
+- You want embeddings computed at natural rest points, not continuously</p>
+<p><strong>Choose Mem0 if:</strong>
+- You need Python support or a hosted API
+- You're building a general-purpose AI assistant (not health-specific)
+- You need multi-level memory (agent/session/user)
+- Community size and integrations are important (Mem0 has LangGraph, CrewAI, etc.)</p>
+<hr />
+<h2>Vitamem vs. Zep</h2>
+<p><a href="https://github.com/getzep/zep">Zep</a> uses temporal knowledge graphs (via Graphiti) for context engineering. It's powerful for relationship-aware retrieval.</p>
+<p><strong>Choose Vitamem if:</strong>
+- You want a simpler architecture without knowledge graph complexity
+- The thread lifecycle states match your workflow
+- You need TypeScript-native with no external service dependencies
+- You want health-specific documentation and patterns out of the box</p>
+<p><strong>Choose Zep if:</strong>
+- You need relationship-aware context (entity graphs, temporal reasoning)
+- You need HIPAA compliance today (Zep Cloud has it)
+- Your use case requires tracking relationships between entities, not just facts about a user
+- You need sub-200ms latency at scale</p>
+<hr />
+<h2>Vitamem vs. Letta (MemGPT)</h2>
+<p><a href="https://github.com/letta-ai/letta">Letta</a> (formerly MemGPT) builds stateful AI agents with configurable memory blocks that evolve over time.</p>
+<p><strong>Choose Vitamem if:</strong>
+- You want a memory library, not a full agent framework
+- Your application is already built and you need to add memory
+- You want the simplicity of a thread-based lifecycle
+- You're working in TypeScript</p>
+<p><strong>Choose Letta if:</strong>
+- You're building agents from scratch and want a full framework
+- You need agents that can manage their own memory (self-editing memory blocks)
+- You want a UI/ADE for inspecting and managing agent state
+- Python is your primary language</p>
+<hr />
+<h2>Vitamem vs. LangChain Memory</h2>
+<p>LangChain's memory modules (ConversationBufferMemory, ConversationSummaryMemory, etc.) are simple utilities within the LangChain framework.</p>
+<p><strong>Choose Vitamem if:</strong>
+- You need persistent memory across sessions (LangChain memory is typically in-process)
+- You need semantic retrieval (embedding + cosine similarity), not just buffer/summary
+- You want lifecycle management (cooling/dormant/closed)
+- You're not using LangChain</p>
+<p><strong>Choose LangChain Memory if:</strong>
+- You're already deep in the LangChain ecosystem
+- You only need within-session memory
+- Simplicity and zero setup is the priority</p>
+<hr />
+<h2>The Core Difference</h2>
+<p>Every alternative was built for general-purpose AI. Vitamem is the only open-source memory library designed around the specific patterns of health and care relationships:</p>
+<blockquote>
+<p>A therapy session has a beginning and end. There's a cooling-off period between appointments. Months might pass. Then the user returns. Vitamem's lifecycle states map directly to this pattern — and that makes it the natural choice for health AI.</p>
+</blockquote>
+      <p class="source-note">Source: <code>guides/vs-alternatives.mdx</code></p>
+    </main>
+  </body>
+</html>

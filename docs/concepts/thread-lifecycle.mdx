@@ -1,0 +1,177 @@
+---
+title: Thread Lifecycle
+description: How Vitamem models conversations as threads moving through four states.
+---
+
+# Thread Lifecycle
+
+Every conversation in Vitamem is a **thread** -- an object that moves through four lifecycle states. This lifecycle is the core innovation: it models the natural rhythm of care relationships rather than treating all interactions as a flat stream of messages.
+
+## The Four States
+
+```
+Active → Cooling → Dormant → Closed
+  💬        ⏳        🧠        📦
+```
+
+### Active
+
+The thread is in an ongoing conversation. Messages are stored in full. No embeddings are computed yet -- that would be wasteful while the conversation is still evolving.
+
+**Entry conditions:** Thread just created, or reactivated from Cooling when a new message arrives.
+
+### Cooling
+
+The conversation has paused. A configurable timer starts (default: 6 hours). During this window, if the user sends a new message, the thread is automatically returned to Active -- the conversation resumes seamlessly.
+
+**Entry conditions:** No messages for `coolingTimeoutMs` (default: 6 hours).
+
+**Exit conditions:**
+
+- New message arrives -> back to **Active**
+- Cooling timer expires -> forward to **Dormant**
+
+### Dormant
+
+The key transition. The thread runs the **embedding pipeline**:
+
+1. LLM extracts facts from all conversation messages
+2. Each fact is embedded into a vector
+3. New facts are deduplicated against existing user memories (cosine similarity >= 0.92)
+4. Unique facts are saved to the memory store
+
+After this, the raw messages no longer need to be processed again. The compressed, deduplicated facts represent everything worth remembering from the conversation.
+
+**Entry conditions:** Cooling timer expires, or `triggerDormantTransition()` called explicitly.
+
+### Closed
+
+Terminal state. The thread is fully archived. The extracted memories remain in the memory store and are searchable indefinitely. No further processing happens.
+
+**Entry conditions:**
+- `closeThread()` called explicitly (only valid from Dormant)
+- `sweepThreads()` auto-closes threads that have been dormant for `closedTimeoutMs` (default: 30 days)
+
+## State Transition Diagram
+
+```
+                new message
+                    ↓
+  ┌────────┐   ┌─────────┐   ┌─────────┐   ┌────────┐
+  │ active │──▶│ cooling │──▶│ dormant │──▶│ closed │
+  └────────┘   └─────────┘   └─────────┘   └────────┘
+                    │              ▲
+                    │  reactivate  │
+                    └──────────────┘
+                  (new message)
+```
+
+All invalid transitions throw an `InvalidTransitionError`.
+
+## Valid Transitions
+
+| From      | To        | Trigger                                                |
+| --------- | --------- | ------------------------------------------------------ |
+| `active`  | `cooling` | No messages for `coolingTimeoutMs`                     |
+| `cooling` | `active`  | New message arrives (automatic in `chat()`)            |
+| `cooling` | `dormant` | Cooling timer expires, or `triggerDormantTransition()` |
+| `dormant` | `closed`  | Explicit `closeThread()` call, or `sweepThreads()` auto-close after `closedTimeoutMs` |
+
+## `sweepThreads()`
+
+The `sweepThreads()` method handles **all** lifecycle transitions in a single call. It is the recommended way to drive the lifecycle in production.
+
+```typescript
+await mem.sweepThreads();
+```
+
+On each invocation, it performs three passes:
+
+1. **Active -> Cooling**: Finds all `active` threads where `lastMessageAt` is older than `coolingTimeoutMs` and transitions them to `cooling`.
+
+2. **Cooling -> Dormant**: Finds all `cooling` threads where `coolingStartedAt` is older than `coolingTimeoutMs` and transitions them to `dormant`. The [embedding pipeline](/docs/api-reference/embedding-pipeline) runs for each, extracting and saving memories.
+
+3. **Dormant -> Closed**: Finds all `dormant` threads where `dormantAt` is older than `closedTimeoutMs` and transitions them to `closed`.
+
+### Scheduling `sweepThreads()`
+
+Vitamem does **not** run timers internally. Your application is responsible for calling `sweepThreads()` on a schedule. Common patterns:
+
+```typescript
+// Using node-cron
+import cron from "node-cron";
+cron.schedule("*/15 * * * *", () => mem.sweepThreads());
+
+// Using setInterval
+setInterval(() => mem.sweepThreads(), 15 * 60 * 1000);
+
+// In a serverless environment (e.g., Vercel cron job, AWS Lambda on schedule)
+export async function handler() {
+  const mem = await createVitamem({ /* ... */ });
+  await mem.sweepThreads();
+}
+```
+
+<Warning>
+`sweepThreads()` requires a storage adapter that implements the optional `getThreadsByState()` method. Both `EphemeralAdapter` and `SupabaseAdapter` implement it. If you use a custom adapter without this method, `sweepThreads()` will throw an error.
+</Warning>
+
+## Auto-Close with `closedTimeoutMs`
+
+The `closedTimeoutMs` config option (default: 30 days) controls how long a dormant thread lives before `sweepThreads()` automatically closes it. This prevents dormant threads from accumulating indefinitely.
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  closedTimeoutMs: 90 * 24 * 60 * 60 * 1000, // 90 days before auto-close
+});
+```
+
+Set `closedTimeoutMs` to a very large value if you want dormant threads to remain open until explicitly closed.
+
+Closing a thread does not delete its extracted memories. Memories remain in the store and are searchable indefinitely via `retrieve()`.
+
+## Reactivation
+
+When `chat()` is called on a `cooling` thread, it automatically reactivates to `active` before processing the message. This means application code never needs to manually handle the cooling -> active transition -- it just works.
+
+```typescript
+// Thread is in 'cooling' state
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: "I have a follow-up question.",
+});
+// Thread is now back to 'active' — no manual reactivation needed
+```
+
+This reactivation pattern is especially important for health companions, where users often return after gaps of days or weeks.
+
+## Configuring Timeouts
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  coolingTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours (default: 6 hours)
+  closedTimeoutMs: 30 * 24 * 60 * 60 * 1000, // 30 days (default)
+});
+```
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `coolingTimeoutMs` | `21600000` (6 hours) | Inactivity before `active -> cooling`, and time in `cooling` before `cooling -> dormant` |
+| `closedTimeoutMs` | `2592000000` (30 days) | Time in `dormant` before `sweepThreads()` auto-closes |
+
+## Why This Design?
+
+The lifecycle states map directly to how health relationships actually work:
+
+- A therapy session is **active** while the user is engaged
+- The period between appointments is **cooling** -- the relationship is still live
+- An extended break (vacation, life events) triggers **dormant** -- memories are compressed
+- Discharge from a care program is **closed** -- the record is preserved but no longer processed
+
+This means Vitamem's architecture aligns with clinical workflow patterns out of the box, without requiring custom logic.

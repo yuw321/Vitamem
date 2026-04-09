@@ -1,0 +1,228 @@
+---
+title: Health Companion Guide
+description: Build an AI health companion with persistent, lifecycle-aware memory using Vitamem.
+---
+
+# Building a Health Companion
+
+This guide walks through building an AI health companion that remembers users across sessions -- tracking health conditions, medications, goals, and preferences -- and responds as a caring friend who genuinely knows them.
+
+## The Pattern
+
+A health companion session with Vitamem looks like this:
+
+```
+User returns → Retrieve relevant memories → Inject into system prompt
+     ↓
+Active conversation (chat loop)
+     ↓
+Session ends → Thread cools down → Memories extracted and embedded
+     ↓
+User returns again → Retrieve updated memories → ...
+```
+
+## Quick Setup with `autoRetrieve`
+
+The simplest way to build a memory-aware health companion is to enable `autoRetrieve`. Vitamem will automatically search past memories and inject them into every chat message.
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  autoRetrieve: true,
+});
+
+// --- Starting a new session ---
+
+const thread = await mem.createThread({ userId: "patient-456" });
+
+// Memories from past sessions are injected automatically
+const { reply, memories } = await mem.chat({
+  threadId: thread.id,
+  message: "Hi! I was just diagnosed with Type 2 diabetes.",
+  systemPrompt: `You are a caring AI health companion.
+Be warm, personal, and reference what you know about the user naturally.
+Important: You are NOT a medical professional. Always encourage consulting healthcare providers.`,
+});
+
+console.log("Reply:", reply);
+console.log("Injected memories:", memories);
+```
+
+With `autoRetrieve: true`, every `chat()` call embeds the user's message, searches for relevant memories, and injects them as a system message before your custom `systemPrompt`. The `memories` field in the response shows exactly what was injected.
+
+## Full Example with Manual Retrieval
+
+For more control over how memories are used, retrieve them manually and build a custom system prompt.
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  embeddingConcurrency: 5,
+});
+
+// --- Starting a new session for a returning user ---
+
+async function startSession(userId: string) {
+  // 1. Retrieve relevant memories for context
+  const memories = await mem.retrieve({
+    userId,
+    query: "health conditions medications goals lifestyle",
+    limit: 10,
+  });
+
+  // 2. Build a system prompt that includes what we know about this user
+  const memoryContext =
+    memories.length > 0
+      ? `What you remember about this user:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`
+      : "This is your first conversation with this user.";
+
+  const systemPrompt = `You are a caring AI health companion. You remember this user from past conversations.
+Be warm, personal, and reference what you know about them naturally — don't recite facts robotically.
+
+${memoryContext}
+
+Important: You are NOT a medical professional. Always encourage consulting healthcare providers for medical decisions.`;
+
+  // 3. Create a new thread for this session
+  const thread = await mem.createThread({ userId });
+
+  return { thread, systemPrompt };
+}
+
+// --- Chat function ---
+
+async function chat(
+  threadId: string,
+  systemPrompt: string,
+  userMessage: string,
+) {
+  const { reply } = await mem.chat({
+    threadId,
+    message: userMessage,
+    systemPrompt,
+  });
+  return reply;
+}
+
+// --- Ending a session ---
+
+async function endSession(threadId: string) {
+  // Trigger dormant transition to extract and embed memories
+  await mem.triggerDormantTransition(threadId);
+  console.log("Session memories saved.");
+}
+
+// --- Usage ---
+
+const userId = "patient-456";
+
+// First session
+const { thread: session1, systemPrompt } = await startSession(userId);
+await chat(
+  session1.id,
+  systemPrompt,
+  "Hi! I was just diagnosed with Type 2 diabetes.",
+);
+await chat(
+  session1.id,
+  systemPrompt,
+  "My doctor prescribed metformin 500mg twice daily.",
+);
+await endSession(session1.id);
+
+// Later — second session (memories are now available)
+const { thread: session2, systemPrompt: systemPrompt2 } =
+  await startSession(userId);
+// The AI will now remember the diabetes diagnosis and metformin prescription
+await chat(
+  session2.id,
+  systemPrompt2,
+  "How should I think about diet changes?",
+);
+// AI responds with knowledge of their specific condition
+```
+
+## Production Setup with Supabase
+
+For a production health companion, use Supabase for durable storage and configure `sweepThreads()` for automatic lifecycle management.
+
+```typescript
+import { createVitamem } from "vitamem";
+import cron from "node-cron";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  coolingTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours
+  closedTimeoutMs: 90 * 24 * 60 * 60 * 1000, // 90 days
+  embeddingConcurrency: 3,
+  autoRetrieve: true,
+});
+
+// Sweep on a schedule to handle abandoned sessions
+cron.schedule("*/15 * * * *", async () => {
+  await mem.sweepThreads();
+});
+```
+
+## Handling Long-term Users
+
+For users who check in regularly over months:
+
+- Vitamem's deduplication prevents memory bloat (same facts won't be stored repeatedly)
+- The lifecycle ensures memories are only extracted when there's something new to remember
+- Use `mem.retrieve()` with specific queries to get the most relevant context for each conversation topic
+
+```typescript
+// Different queries for different conversation contexts
+const dietMemories = await mem.retrieve({
+  userId,
+  query: "diet nutrition food",
+  limit: 5,
+});
+const medMemories = await mem.retrieve({
+  userId,
+  query: "medications prescriptions dosage",
+  limit: 5,
+});
+const moodMemories = await mem.retrieve({
+  userId,
+  query: "mood mental health stress anxiety",
+  limit: 5,
+});
+```
+
+## GDPR Compliance
+
+Health companions handle sensitive data. Vitamem provides deletion methods for GDPR compliance:
+
+```typescript
+// Delete a specific memory
+await mem.deleteMemory("memory-id");
+
+// Delete all data for a user
+await mem.deleteUserData("user-123");
+```
+
+See the [troubleshooting guide](/docs/troubleshooting) for more GDPR patterns.
+
+## Disclaimer
+
+Vitamem is a developer library. Applications built with it that offer health-related features should:
+
+- Include clear disclaimers that the AI is not a licensed healthcare provider
+- Never store or process Protected Health Information (PHI) without appropriate HIPAA compliance measures
+- Direct users to seek professional medical advice for clinical decisions
+
+See [our full disclaimer](/docs/legal/disclaimer) for details.

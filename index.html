@@ -1,0 +1,1291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vitamem — Memory for AI Health Companions</title>
+    <meta
+      name="description"
+      content="Open-source TypeScript library for AI health companions. Lifecycle-aware memory that understands the rhythm of care relationships."
+    />
+    <meta
+      property="og:title"
+      content="Vitamem — Memory for AI Health Companions"
+    />
+    <meta
+      property="og:description"
+      content="Lifecycle-aware memory for AI health companions. Active → Cooling → Dormant → Closed."
+    />
+    <meta property="og:image" content="docs/brand/social-preview.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="docs/brand/social-preview.png" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --teal: #0f766e;
+        --teal-mid: #0d9488;
+        --teal-lt: #14b8a6;
+        --amber: #f59e0b;
+        --rose: #f43f5e;
+        --slate-dk: #0f172a;
+        --slate: #1e293b;
+        --mid: #334155;
+        --silver: #94a3b8;
+        --mist: #e2e8f0;
+        --snow: #f8fafc;
+        --border: rgba(255, 255, 255, 0.08);
+        --teal-glow: rgba(15, 118, 110, 0.15);
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: var(--slate-dk);
+        color: var(--snow);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ── Nav ── */
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-inner {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 24px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+      }
+      .nav-wordmark {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--snow);
+        letter-spacing: -0.3px;
+      }
+      .nav-wordmark span {
+        color: var(--teal-lt);
+      }
+      .nav-links {
+        display: flex;
+        gap: 8px;
+        list-style: none;
+        align-items: center;
+      }
+      .nav-links a {
+        font-size: 14px;
+        color: var(--silver);
+        text-decoration: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition:
+          color 0.15s,
+          background 0.15s;
+      }
+      .nav-links a:hover {
+        color: var(--snow);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .nav-links .btn-nav {
+        color: var(--teal-lt);
+        border: 1px solid rgba(20, 184, 166, 0.3);
+        background: rgba(20, 184, 166, 0.08);
+      }
+      .nav-links .btn-nav:hover {
+        background: rgba(20, 184, 166, 0.15);
+      }
+
+      /* ── Container ── */
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ── Hero ── */
+      #hero {
+        padding: 96px 0 48px;
+        text-align: center;
+      }
+
+      .hero-label {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--teal-lt);
+        background: var(--teal-glow);
+        border: 1px solid rgba(20, 184, 166, 0.2);
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 24px;
+      }
+
+      .hero-logo {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 28px;
+      }
+      .hero-logo img {
+        width: min(96px, 28vw);
+        height: auto;
+      }
+
+      h1 {
+        font-size: clamp(30px, 5.5vw, 50px);
+        font-weight: 700;
+        letter-spacing: -1.5px;
+        line-height: 1.1;
+        color: var(--snow);
+        margin-bottom: 18px;
+      }
+      h1 em {
+        font-style: normal;
+        color: var(--teal-lt);
+      }
+
+      .hero-sub {
+        font-size: 19px;
+        color: var(--silver);
+        max-width: 520px;
+        margin: 0 auto 36px;
+        line-height: 1.6;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 32px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 22px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+        transition:
+          opacity 0.15s,
+          transform 0.1s;
+        cursor: pointer;
+      }
+      .btn:hover {
+        opacity: 0.88;
+        transform: translateY(-1px);
+      }
+      .btn-primary {
+        background: var(--teal);
+        color: #fff;
+        border: 1.5px solid var(--teal);
+      }
+      .btn-secondary {
+        background: transparent;
+        color: var(--mist);
+        border: 1.5px solid var(--mid);
+      }
+
+      .install-banner {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 20px;
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 14px;
+        color: var(--mist);
+        cursor: pointer;
+        transition: border-color 0.2s;
+      }
+      .install-banner:hover {
+        border-color: var(--teal);
+      }
+      .install-banner .prompt {
+        color: var(--silver);
+        user-select: none;
+      }
+      .install-banner .copy-hint {
+        font-family: -apple-system, sans-serif;
+        font-size: 11px;
+        color: var(--mid);
+        margin-left: 8px;
+      }
+
+      /* ── Sections ── */
+      section {
+        padding: 72px 0;
+      }
+      section + section {
+        border-top: 1px solid var(--border);
+      }
+      .section-label {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--teal-lt);
+        margin-bottom: 10px;
+      }
+      .section-title {
+        font-size: clamp(22px, 3.5vw, 32px);
+        font-weight: 700;
+        letter-spacing: -0.8px;
+        color: var(--snow);
+        margin-bottom: 12px;
+      }
+      .section-desc {
+        font-size: 16px;
+        color: var(--silver);
+        max-width: 540px;
+        line-height: 1.7;
+      }
+      .section-header {
+        margin-bottom: 40px;
+      }
+
+      /* ── Reveal ── */
+      .reveal {
+        opacity: 0;
+        transform: translateY(20px);
+        transition:
+          opacity 0.55s ease,
+          transform 0.55s ease;
+      }
+      .reveal.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ── Lifecycle ── */
+      .lc-track {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        margin-top: 36px;
+        flex-wrap: wrap;
+      }
+      .lc-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 18px 20px;
+        border-radius: 12px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: all 0.25s ease;
+        min-width: 130px;
+        text-align: center;
+      }
+      .lc-node:hover,
+      .lc-node.lc-active {
+        transform: translateY(-3px);
+      }
+      .lc-dot {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        transition: transform 0.25s;
+      }
+      .lc-node:hover .lc-dot,
+      .lc-node.lc-active .lc-dot {
+        transform: scale(1.12);
+      }
+      .lc-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--snow);
+        margin-bottom: 2px;
+      }
+      .lc-hint {
+        font-size: 11px;
+        color: var(--silver);
+      }
+
+      .lc-node[data-state="active"] .lc-dot {
+        background: var(--teal);
+      }
+      .lc-node[data-state="cooling"] .lc-dot {
+        background: #7c3aed;
+      }
+      .lc-node[data-state="dormant"] .lc-dot {
+        background: var(--amber);
+      }
+      .lc-node[data-state="closed"] .lc-dot {
+        background: var(--mid);
+      }
+
+      .lc-node[data-state="active"].lc-active {
+        border-color: var(--teal);
+        background: var(--teal-glow);
+      }
+      .lc-node[data-state="cooling"].lc-active {
+        border-color: #7c3aed;
+        background: rgba(124, 58, 237, 0.1);
+      }
+      .lc-node[data-state="dormant"].lc-active {
+        border-color: var(--amber);
+        background: rgba(245, 158, 11, 0.1);
+      }
+      .lc-node[data-state="closed"].lc-active {
+        border-color: var(--mid);
+        background: rgba(51, 65, 85, 0.4);
+      }
+
+      .lc-arrow {
+        font-size: 18px;
+        color: var(--mid);
+        padding: 0 4px;
+      }
+
+      .lc-detail {
+        margin-top: 20px;
+        padding: 22px;
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      .lc-detail-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--snow);
+        margin-bottom: 6px;
+      }
+      .lc-detail-body {
+        font-size: 14px;
+        color: var(--silver);
+        line-height: 1.7;
+      }
+      .lc-detail-body strong {
+        color: var(--snow);
+      }
+
+      /* ── Claims grid ── */
+      .claims-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 14px;
+        margin-top: 36px;
+      }
+      .claim-card {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px;
+        transition:
+          border-color 0.2s,
+          transform 0.2s;
+      }
+      .claim-card:hover {
+        border-color: rgba(20, 184, 166, 0.3);
+        transform: translateY(-2px);
+      }
+      .claim-num {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -1px;
+        margin-bottom: 6px;
+        line-height: 1;
+      }
+      .claim-num.teal {
+        color: var(--teal-lt);
+      }
+      .claim-num.amber {
+        color: var(--amber);
+      }
+      .claim-num.purple {
+        color: #a78bfa;
+      }
+      .claim-num.rose {
+        color: var(--rose);
+      }
+      .claim-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--snow);
+        margin-bottom: 4px;
+      }
+      .claim-desc {
+        font-size: 12px;
+        color: var(--silver);
+        line-height: 1.6;
+      }
+
+      /* ── Embedding math callout ── */
+      .math-callout {
+        margin-top: 36px;
+        padding: 24px;
+        background: var(--slate);
+        border: 1px solid rgba(20, 184, 166, 0.25);
+        border-radius: 12px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+      .math-col .math-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--silver);
+        margin-bottom: 10px;
+      }
+      .math-col .math-value {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -1px;
+        line-height: 1;
+        margin-bottom: 6px;
+      }
+      .math-col.naive .math-value {
+        color: var(--rose);
+      }
+      .math-col.vita .math-value {
+        color: var(--teal-lt);
+      }
+      .math-col .math-desc {
+        font-size: 13px;
+        color: var(--silver);
+        line-height: 1.5;
+      }
+      .math-footnote {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: var(--mid);
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+        margin-top: 4px;
+      }
+
+      /* ── Use cases ── */
+      .use-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 36px;
+      }
+      .use-card {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px;
+        transition: border-color 0.2s;
+      }
+      .use-card:hover {
+        border-color: rgba(20, 184, 166, 0.3);
+      }
+      .use-icon {
+        font-size: 24px;
+        margin-bottom: 12px;
+      }
+      .use-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--snow);
+        margin-bottom: 6px;
+      }
+      .use-desc {
+        font-size: 13px;
+        color: var(--silver);
+        line-height: 1.6;
+      }
+
+      /* ── Documentation links ── */
+      .docs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 14px;
+        margin-top: 36px;
+      }
+      .docs-card {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .docs-card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--mist);
+        margin-bottom: 10px;
+        letter-spacing: 0.3px;
+      }
+      .docs-links {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .docs-link {
+        font-size: 13px;
+        color: var(--silver);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .docs-link:hover {
+        color: var(--teal-lt);
+      }
+
+      /* ── Code block ── */
+      .code-wrap {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 36px;
+      }
+      .code-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .code-lang {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--silver);
+        letter-spacing: 0.5px;
+      }
+      .code-dots {
+        display: flex;
+        gap: 6px;
+      }
+      .code-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      pre {
+        padding: 22px;
+        overflow-x: auto;
+        font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+        font-size: 13px;
+        line-height: 1.8;
+        color: var(--snow);
+        tab-size: 2;
+      }
+      .kw {
+        color: #93c5fd;
+      }
+      .fn {
+        color: #86efac;
+      }
+      .str {
+        color: #fde68a;
+      }
+      .cm {
+        color: #475569;
+      }
+      .cn {
+        color: #c4b5fd;
+      }
+      .op {
+        color: #94a3b8;
+      }
+      .hl {
+        color: var(--teal-lt);
+      }
+
+      /* ── Disclaimer ── */
+      .disclaimer {
+        margin-top: 56px;
+        padding: 20px 24px;
+        background: rgba(244, 63, 94, 0.06);
+        border: 1px solid rgba(244, 63, 94, 0.2);
+        border-radius: 10px;
+        font-size: 13px;
+        color: var(--silver);
+        line-height: 1.6;
+      }
+      .disclaimer strong {
+        color: var(--mist);
+      }
+
+      /* ── Footer ── */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 36px 0;
+      }
+      .footer-inner {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .footer-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--snow);
+      }
+      .footer-name span {
+        color: var(--teal-lt);
+      }
+      .footer-meta {
+        font-size: 12px;
+        color: var(--mid);
+        margin-top: 2px;
+      }
+      .footer-links {
+        display: flex;
+        gap: 20px;
+      }
+      .footer-links a {
+        font-size: 13px;
+        color: var(--mid);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .footer-links a:hover {
+        color: var(--snow);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 640px) {
+        section {
+          padding: 48px 0;
+        }
+        #hero {
+          padding: 60px 0 32px;
+        }
+        .lc-track {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .lc-arrow {
+          transform: rotate(90deg);
+        }
+        .claims-grid,
+        .use-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+        .math-callout {
+          grid-template-columns: 1fr;
+        }
+        .nav-links li:not(:last-child) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="nav-inner">
+        <a class="nav-logo" href="#hero">
+          <img
+            src="docs/brand/logo-concept-a.svg"
+            alt="Vitamem"
+            height="32"
+            style="height: 32px; width: auto"
+          />
+          <span class="nav-wordmark">Vita<span>mem</span></span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="#lifecycle">Lifecycle</a></li>
+          <li><a href="#why">Why Vitamem</a></li>
+          <li><a href="#documentation">Docs</a></li>
+          <li><a href="#quick-start">Quick Start</a></li>
+          <li><a href="demo.html">Demo</a></li>
+          <li>
+            <a
+              href="https://github.com/yuw321/Vitamem"
+              target="_blank"
+              rel="noopener"
+              >GitHub</a
+            >
+          </li>
+          <li><a href="#documentation" class="btn-nav">Docs →</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section id="hero">
+      <div class="container">
+        <div class="hero-label">
+          Open Source · TypeScript · Zero Dependencies
+        </div>
+        <div class="hero-logo">
+          <img src="docs/brand/logo-concept-a.svg" alt="Vitamem" />
+        </div>
+        <h1>
+          Memory for AI health companions<br /><em>that actually listens.</em>
+        </h1>
+        <p class="hero-sub">
+          Most memory libraries treat every message the same. Vitamem
+          understands that care relationships have a rhythm — and models it.
+        </p>
+        <div class="hero-actions">
+          <a href="demo.html" class="btn btn-primary">
+            <svg
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              viewBox="0 0 24 24"
+            >
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            See the Demo
+          </a>
+          <a href="#documentation" class="btn btn-secondary">Read the Docs</a>
+          <a href="https://github.com/yuw321/Vitamem" class="btn btn-secondary">
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"
+              />
+            </svg>
+            GitHub
+          </a>
+        </div>
+        <div class="install-banner" onclick="copyInstall(this)">
+          <span class="prompt">$</span>
+          <span>npm install vitamem</span>
+          <span class="copy-hint">click to copy</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lifecycle -->
+    <section id="lifecycle">
+      <div class="container reveal">
+        <div class="section-header">
+          <div class="section-label">Core Concept</div>
+          <h2 class="section-title">
+            Conversations have a lifecycle. Vitamem tracks it.
+          </h2>
+          <p class="section-desc">
+            Every thread moves through four states — mirroring how care
+            relationships actually work. Click a state to learn what happens.
+          </p>
+        </div>
+
+        <div class="lc-track" id="lc-track">
+          <div
+            class="lc-node lc-active"
+            data-state="active"
+            onclick="selectState(this)"
+          >
+            <div class="lc-dot">💬</div>
+            <div class="lc-name">Active</div>
+            <div class="lc-hint">session live</div>
+          </div>
+          <div class="lc-arrow">→</div>
+          <div class="lc-node" data-state="cooling" onclick="selectState(this)">
+            <div class="lc-dot">⏳</div>
+            <div class="lc-name">Cooling</div>
+            <div class="lc-hint">between sessions</div>
+          </div>
+          <div class="lc-arrow">→</div>
+          <div class="lc-node" data-state="dormant" onclick="selectState(this)">
+            <div class="lc-dot">🧠</div>
+            <div class="lc-name">Dormant</div>
+            <div class="lc-hint">memories saved</div>
+          </div>
+          <div class="lc-arrow">→</div>
+          <div class="lc-node" data-state="closed" onclick="selectState(this)">
+            <div class="lc-dot">📦</div>
+            <div class="lc-name">Closed</div>
+            <div class="lc-hint">archived</div>
+          </div>
+        </div>
+
+        <div class="lc-detail">
+          <div class="lc-detail-title" id="lc-title">
+            Active — session is live
+          </div>
+          <div class="lc-detail-body" id="lc-body">
+            The user is actively checking in. Messages are stored in full
+            fidelity. No embeddings yet — computing them now would be wasteful
+            while the conversation is still evolving. The thread stays active as
+            long as messages keep arriving.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Vitamem -->
+    <section id="why">
+      <div class="container reveal">
+        <div class="section-header">
+          <div class="section-label">Why Vitamem</div>
+          <h2 class="section-title">Verified properties of the library</h2>
+          <p class="section-desc">
+            These are facts about the code, not marketing claims.
+          </p>
+        </div>
+
+        <div class="claims-grid">
+          <div class="claim-card">
+            <div class="claim-num teal">111</div>
+            <div class="claim-title">Passing tests</div>
+            <div class="claim-desc">
+              96.6% statement coverage across all modules. Run
+              <code
+                style="
+                  font-size: 11px;
+                  background: var(--mid);
+                  padding: 1px 4px;
+                  border-radius: 3px;
+                "
+                >npm test</code
+              >
+              and see for yourself.
+            </div>
+          </div>
+          <div class="claim-card">
+            <div class="claim-num amber">0</div>
+            <div class="claim-title">Production dependencies</div>
+            <div class="claim-desc">
+              No hidden supply chain risk. You bring your own LLM and storage —
+              Vitamem wires them together.
+            </div>
+          </div>
+          <div class="claim-card">
+            <div class="claim-num purple">0.92</div>
+            <div class="claim-title">Dedup threshold</div>
+            <div class="claim-desc">
+              Cosine similarity ≥ 0.92 = duplicate, skipped. Also deduplicates
+              within the same batch. Configurable.
+            </div>
+          </div>
+          <div class="claim-card">
+            <div class="claim-num rose">4</div>
+            <div class="claim-title">Enforced states</div>
+            <div class="claim-desc">
+              Active → Cooling → Dormant → Closed. Invalid transitions throw
+              <code
+                style="
+                  font-size: 11px;
+                  background: var(--mid);
+                  padding: 1px 4px;
+                  border-radius: 3px;
+                "
+                >InvalidTransitionError</code
+              >.
+            </div>
+          </div>
+        </div>
+
+        <!-- Embedding math -->
+        <div class="section-header" style="margin-top: 52px; margin-bottom: 0">
+          <div class="section-label">Embedding Cost</div>
+          <h2 class="section-title">
+            Embed extracted facts, not every message
+          </h2>
+          <p class="section-desc" style="max-width: 600px">
+            Vitamem embeds only the facts extracted at dormant transition — not
+            each raw message as it arrives. Here's what that means in practice
+            for a typical health check-in session.
+          </p>
+        </div>
+
+        <div class="math-callout">
+          <div class="math-col naive">
+            <div class="math-label">Naive per-message approach</div>
+            <div class="math-value">50</div>
+            <div class="math-desc">
+              Embedding API calls for a 50-message session — one per message, at
+              send time.
+            </div>
+          </div>
+          <div class="math-col vita">
+            <div class="math-label">Vitamem approach</div>
+            <div class="math-value">5–8</div>
+            <div class="math-desc">
+              Embedding API calls — one per extracted fact, once per thread
+              lifetime, at dormant transition.
+            </div>
+          </div>
+          <div class="math-footnote">
+            Savings ratio = messages ÷ extracted facts. A 50-message session
+            producing 6 facts = ~8× fewer embedding calls. Savings compound for
+            long-term users with repeat sessions.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Use Cases -->
+    <section id="use-cases">
+      <div class="container reveal">
+        <div class="section-header">
+          <div class="section-label">Use Cases</div>
+          <h2 class="section-title">Built for health AI, broadly applicable</h2>
+          <p class="section-desc">
+            Anywhere a care relationship needs memory that respects its natural
+            rhythm.
+          </p>
+        </div>
+        <div class="use-grid">
+          <div class="use-card">
+            <div class="use-icon">🩺</div>
+            <div class="use-title">AI Health Companions</div>
+            <div class="use-desc">
+              Remembers symptoms, medications, conditions, and health goals
+              across many sessions over months.
+            </div>
+          </div>
+          <div class="use-card">
+            <div class="use-icon">🧠</div>
+            <div class="use-title">Counseling Assistants</div>
+            <div class="use-desc">
+              Maintains emotional context and recalls what matters — supporting
+              therapeutic progress naturally.
+            </div>
+          </div>
+          <div class="use-card">
+            <div class="use-icon">📋</div>
+            <div class="use-title">Chronic Condition Tracking</div>
+            <div class="use-desc">
+              Persists health history across long gaps between check-ins.
+              Deduplication keeps records clean over time.
+            </div>
+          </div>
+          <div class="use-card">
+            <div class="use-icon">🌿</div>
+            <div class="use-title">Wellness Apps</div>
+            <div class="use-desc">
+              Builds a richer picture of the user across habits, goals, and
+              lifestyle — without expensive per-message processing.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quick-start">
+      <div class="container reveal">
+        <div class="section-header">
+          <div class="section-label">Quick Start</div>
+          <h2 class="section-title">Up and running in minutes</h2>
+          <p class="section-desc">
+            Bring your own LLM adapter and storage. Vitamem handles the
+            lifecycle and memory.
+          </p>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <span class="code-lang">TYPESCRIPT</span>
+            <div class="code-dots">
+              <div class="code-dot" style="background: #ff5f57"></div>
+              <div class="code-dot" style="background: #febc2e"></div>
+              <div class="code-dot" style="background: #28c840"></div>
+            </div>
+          </div>
+          <pre><span class="kw">import</span> { <span class="fn">createVitamem</span>, <span class="cn">InMemoryAdapter</span> } <span class="kw">from</span> <span class="str">'vitamem'</span><span class="op">;</span>
+
+<span class="cm">// 1. Wire up your LLM (OpenAI, Anthropic, or any provider)</span>
+<span class="kw">const</span> <span class="cn">llm</span> <span class="op">=</span> { <span class="fn">chat</span>, <span class="fn">extractMemories</span>, <span class="fn">embed</span> }<span class="op">;</span>  <span class="cm">// your adapter</span>
+
+<span class="cm">// 2. Initialize</span>
+<span class="kw">const</span> <span class="cn">mem</span> <span class="op">=</span> <span class="kw">await</span> <span class="fn">createVitamem</span>(
+  { llm: { provider: <span class="str">'openai'</span>, model: <span class="str">'gpt-4o-mini'</span> }, storage: { adapter: <span class="str">'in-memory'</span> } },
+  { llm: <span class="cn">llm</span>, storage: <span class="kw">new</span> <span class="cn">InMemoryAdapter</span>() },
+)<span class="op">;</span>
+
+<span class="cm">// 3. Start a health companion session</span>
+<span class="kw">const</span> <span class="cn">thread</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">createThread</span>({ userId: <span class="str">'patient-123'</span> })<span class="op">;</span>
+<span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">chat</span>({ threadId: <span class="cn">thread</span>.id, message: <span class="str">"I've had Type 2 diabetes for 3 years. I take metformin daily."</span> })<span class="op">;</span>
+
+<span class="cm">// 4. End session — extract facts, embed once, deduplicate, save</span>
+<span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">triggerDormantTransition</span>(<span class="cn">thread</span>.id)<span class="op">;</span>  <span class="cm">// thread.state → 'dormant'</span>
+
+<span class="cm">// 5. Next session — retrieve memories by semantic query</span>
+<span class="kw">const</span> <span class="cn">memories</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">retrieve</span>({ userId: <span class="str">'patient-123'</span>, query: <span class="str">'medications and conditions'</span> })<span class="op">;</span>
+<span class="cm">// [{ content: 'Has Type 2 diabetes', source: 'confirmed', score: 0.96 }, ...]</span></pre>
+        </div>
+
+        <div
+          style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap"
+        >
+          <a
+            href="docs/quickstart.html"
+            class="btn btn-primary"
+            style="font-size: 14px; padding: 10px 18px"
+            >Full Quickstart →</a
+          >
+          <a
+            href="docs/guides/health-companion.html"
+            class="btn btn-secondary"
+            style="font-size: 14px; padding: 10px 18px"
+            >Health Companion Guide</a
+          >
+          <a
+            href="https://github.com/yuw321/Vitamem/tree/main/examples"
+            class="btn btn-secondary"
+            style="font-size: 14px; padding: 10px 18px"
+            >View Examples</a
+          >
+        </div>
+
+        <div class="disclaimer">
+          <strong>Disclaimer:</strong> Vitamem is a developer library for memory
+          management. It is not a medical device and is not intended to
+          diagnose, treat, cure, or prevent any medical condition. Applications
+          using Vitamem are responsible for their own privacy policies,
+          compliance requirements (HIPAA, GDPR, etc.), and safety disclosures.
+          <a href="docs/legal/disclaimer.html" style="color: var(--teal-lt)"
+            >Full disclaimer →</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <!-- Documentation -->
+    <section id="documentation">
+      <div class="container reveal">
+        <div class="section-header">
+          <div class="section-label">Documentation</div>
+          <h2 class="section-title">Browse docs from this repository</h2>
+          <p class="section-desc">
+            These links point to local files in the <code>docs/</code> folder
+            so you can open them directly in the browser.
+          </p>
+        </div>
+
+        <div class="docs-grid">
+          <div class="docs-card">
+            <div class="docs-card-title">Get Started</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/introduction.html">Introduction</a>
+              <a class="docs-link" href="docs/installation.html">Installation</a>
+              <a class="docs-link" href="docs/quickstart.html">Quickstart</a>
+              <a class="docs-link" href="docs/tutorial-first-project.html"
+                >First Project Tutorial</a
+              >
+            </div>
+          </div>
+
+          <div class="docs-card">
+            <div class="docs-card-title">Concepts</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/concepts/thread-lifecycle.html"
+                >Thread Lifecycle</a
+              >
+              <a class="docs-link" href="docs/concepts/memory-extraction.html"
+                >Memory Extraction</a
+              >
+              <a class="docs-link" href="docs/concepts/deduplication.html"
+                >Deduplication</a
+              >
+              <a class="docs-link" href="docs/concepts/auto-retrieve.html"
+                >Auto-Retrieve</a
+              >
+            </div>
+          </div>
+
+          <div class="docs-card">
+            <div class="docs-card-title">Providers</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/providers/openai.html">OpenAI</a>
+              <a class="docs-link" href="docs/providers/anthropic.html"
+                >Anthropic</a
+              >
+              <a class="docs-link" href="docs/providers/ollama.html">Ollama</a>
+              <a
+                class="docs-link"
+                href="docs/providers/custom-llm-adapter.html"
+                >Custom LLM Adapter</a
+              >
+            </div>
+          </div>
+
+          <div class="docs-card">
+            <div class="docs-card-title">Guides</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/guides/integration-architecture.html"
+                >Integration Architecture</a
+              >
+              <a class="docs-link" href="docs/guides/health-companion.html"
+                >Health Companion</a
+              >
+              <a class="docs-link" href="docs/guides/health-history.html"
+                >Health History</a
+              >
+              <a class="docs-link" href="docs/guides/custom-storage.html"
+                >Custom Storage</a
+              >
+              <a class="docs-link" href="docs/guides/vs-alternatives.html"
+                >Vitamem vs Alternatives</a
+              >
+            </div>
+          </div>
+
+          <div class="docs-card">
+            <div class="docs-card-title">API Reference</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/api-reference/create-vitamem.html"
+                >createVitamem</a
+              >
+              <a class="docs-link" href="docs/api-reference/types.html">Types</a>
+              <a class="docs-link" href="docs/api-reference/state-machine.html"
+                >State Machine</a
+              >
+              <a
+                class="docs-link"
+                href="docs/api-reference/embedding-pipeline.html"
+                >Embedding Pipeline</a
+              >
+              <a class="docs-link" href="docs/api-reference/storage-adapter.html"
+                >Storage Adapter</a
+              >
+            </div>
+          </div>
+
+          <div class="docs-card">
+            <div class="docs-card-title">Troubleshooting + Legal</div>
+            <div class="docs-links">
+              <a class="docs-link" href="docs/troubleshooting.html"
+                >Troubleshooting</a
+              >
+              <a class="docs-link" href="docs/legal/disclaimer.html"
+                >Disclaimer</a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="footer-inner">
+        <div>
+          <div class="footer-name">Vita<span>mem</span></div>
+          <div class="footer-meta">MIT License · Open Source</div>
+        </div>
+        <div class="footer-links">
+          <a
+            href="https://github.com/yuw321/Vitamem"
+            target="_blank"
+            rel="noopener"
+            >GitHub</a
+          >
+          <a
+            href="https://www.npmjs.com/package/vitamem"
+            target="_blank"
+            rel="noopener"
+            >npm</a
+          >
+          <a href="#documentation">Docs</a>
+          <a href="demo.html">Demo</a>
+          <a href="docs/legal/disclaimer.html">Disclaimer</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      var stateInfo = {
+        active: {
+          title: "Active — session is live",
+          body: "The user is actively checking in. Messages are stored in full fidelity. No embeddings are computed yet — doing so mid-conversation would waste API calls on incomplete context. The thread stays active as long as messages keep arriving, and automatically reactivates from cooling when a new message arrives.",
+        },
+        cooling: {
+          title: "Cooling — between sessions",
+          body: "The conversation has gone quiet. A configurable timer starts (default: 6 hours). If the user sends a new message, the thread <strong>automatically reactivates to Active</strong> — no manual intervention needed. This models the natural gap between health check-ins without losing the relationship.",
+        },
+        dormant: {
+          title: "Dormant — memories extracted and saved",
+          body: "The key transition. Vitamem calls your LLM to extract facts from all conversation messages, embeds each fact (typically 5–10 API calls for a full session), deduplicates against existing memories using cosine similarity, and saves only genuinely new facts. This is the <strong>only time embeddings are computed</strong> for this thread.",
+        },
+        closed: {
+          title: "Closed — archived permanently",
+          body: 'The thread is done — either the user has discharged or the care relationship has ended. The extracted memories remain in the store and are searchable indefinitely. No further processing happens on this thread. Invalid transitions from closed throw <code style="font-size:12px;background:#334155;padding:1px 4px;border-radius:3px;">InvalidTransitionError</code>.',
+        },
+      };
+
+      function selectState(el) {
+        document.querySelectorAll(".lc-node").forEach(function (n) {
+          n.classList.remove("lc-active");
+        });
+        el.classList.add("lc-active");
+        var s = stateInfo[el.dataset.state];
+        document.getElementById("lc-title").textContent = s.title;
+        document.getElementById("lc-body").innerHTML = s.body;
+      }
+
+      function copyInstall(el) {
+        navigator.clipboard.writeText("npm install vitamem").then(function () {
+          var hint = el.querySelector(".copy-hint");
+          hint.textContent = "copied!";
+          hint.style.color = "var(--teal-lt)";
+          setTimeout(function () {
+            hint.textContent = "click to copy";
+            hint.style.color = "";
+          }, 1800);
+        });
+      }
+
+      // Scroll reveal
+      var io = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) e.target.classList.add("visible");
+          });
+        },
+        { threshold: 0.1 },
+      );
+      document.querySelectorAll(".reveal").forEach(function (el) {
+        io.observe(el);
+      });
+
+      // Auto-cycle lifecycle
+      var states = ["active", "cooling", "dormant", "closed"];
+      var idx = 0;
+      var cycle = setInterval(function () {
+        idx = (idx + 1) % states.length;
+        selectState(
+          document.querySelector('.lc-node[data-state="' + states[idx] + '"]'),
+        );
+      }, 3500);
+      document
+        .getElementById("lc-track")
+        .addEventListener("click", function () {
+          clearInterval(cycle);
+        });
+    </script>
+  </body>
+</html>

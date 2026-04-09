@@ -1,0 +1,1424 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vitamem Demo — Health Companion</title>
+    <meta
+      name="description"
+      content="See Vitamem in action: a simulated AI health companion that extracts memories from a conversation and recalls them in the next session."
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --teal: #0f766e;
+        --teal-mid: #0d9488;
+        --teal-lt: #14b8a6;
+        --amber: #f59e0b;
+        --rose: #f43f5e;
+        --green: #22c55e;
+        --slate-dk: #0f172a;
+        --slate: #1e293b;
+        --mid: #334155;
+        --silver: #94a3b8;
+        --mist: #e2e8f0;
+        --snow: #f8fafc;
+        --border: rgba(255, 255, 255, 0.08);
+        --teal-glow: rgba(15, 118, 110, 0.15);
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: var(--slate-dk);
+        color: var(--snow);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100vh;
+      }
+
+      /* ── Nav ── */
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 24px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+      }
+      .nav-wordmark {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--snow);
+        letter-spacing: -0.3px;
+      }
+      .nav-wordmark span {
+        color: var(--teal-lt);
+      }
+      .nav-links {
+        display: flex;
+        gap: 8px;
+        list-style: none;
+        align-items: center;
+      }
+      .nav-links a {
+        font-size: 14px;
+        color: var(--silver);
+        text-decoration: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition:
+          color 0.15s,
+          background 0.15s;
+      }
+      .nav-links a:hover {
+        color: var(--snow);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .nav-links .btn-nav {
+        color: var(--teal-lt);
+        border: 1px solid rgba(20, 184, 166, 0.3);
+        background: rgba(20, 184, 166, 0.08);
+      }
+      .nav-links .btn-nav:hover {
+        background: rgba(20, 184, 166, 0.15);
+      }
+
+      /* ── Page header ── */
+      .page-header {
+        text-align: center;
+        padding: 48px 24px 32px;
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      .demo-badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--teal-lt);
+        background: var(--teal-glow);
+        border: 1px solid rgba(20, 184, 166, 0.2);
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 16px;
+      }
+      .page-header h1 {
+        font-size: clamp(22px, 4vw, 32px);
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        line-height: 1.2;
+        margin-bottom: 12px;
+      }
+      .page-header p {
+        font-size: 15px;
+        color: var(--silver);
+        margin-bottom: 0;
+      }
+      .note-bar {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        font-size: 12px;
+        color: var(--silver);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        padding: 6px 14px;
+        border-radius: 20px;
+      }
+      .note-bar span {
+        color: var(--amber);
+      }
+
+      /* ── How it works strip ── */
+      .how-strip {
+        max-width: 1100px;
+        margin: 0 auto 32px;
+        padding: 0 24px;
+      }
+      .how-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--silver);
+        margin-bottom: 14px;
+        text-align: center;
+      }
+      .how-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+      }
+      .how-step {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .how-step-num {
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--teal-lt);
+        margin-bottom: 4px;
+      }
+      .how-step-text {
+        font-size: 13px;
+        color: var(--silver);
+        line-height: 1.4;
+      }
+      .how-step-text strong {
+        color: var(--snow);
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      /* ── Main layout ── */
+      .demo-wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 24px 80px;
+      }
+      .demo-grid {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 780px) {
+        .demo-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ── Chat panel ── */
+      .chat-panel {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .chat-header {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .chat-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--snow);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .thread-state-badge {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        padding: 3px 10px;
+        border-radius: 20px;
+        transition: all 0.4s ease;
+      }
+      .state-active {
+        background: rgba(34, 197, 94, 0.15);
+        color: var(--green);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+      }
+      .state-cooling {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--amber);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+      }
+      .state-dormant {
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--silver);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .state-new {
+        background: rgba(20, 184, 166, 0.15);
+        color: var(--teal-lt);
+        border: 1px solid rgba(20, 184, 166, 0.3);
+      }
+
+      .chat-messages {
+        padding: 20px;
+        min-height: 380px;
+        max-height: 480px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .chat-messages::-webkit-scrollbar {
+        width: 4px;
+      }
+      .chat-messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .chat-messages::-webkit-scrollbar-thumb {
+        background: var(--mid);
+        border-radius: 2px;
+      }
+
+      .msg {
+        display: flex;
+        gap: 10px;
+        animation: msgIn 0.3s ease forwards;
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      @keyframes msgIn {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .msg.user {
+        flex-direction: row-reverse;
+      }
+      .msg-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .msg.ai .msg-avatar {
+        background: var(--teal-glow);
+        color: var(--teal-lt);
+        border: 1px solid rgba(20, 184, 166, 0.2);
+      }
+      .msg.user .msg-avatar {
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--silver);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .msg-bubble {
+        max-width: 75%;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .msg.ai .msg-bubble {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        border-bottom-left-radius: 4px;
+        color: var(--snow);
+      }
+      .msg.user .msg-bubble {
+        background: var(--teal-glow);
+        border: 1px solid rgba(20, 184, 166, 0.2);
+        border-bottom-right-radius: 4px;
+        color: var(--snow);
+      }
+      .msg-bubble em {
+        color: var(--teal-lt);
+        font-style: normal;
+        font-weight: 500;
+      }
+
+      .typing-wrapper {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .typing-indicator {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        border-bottom-left-radius: 4px;
+      }
+      .typing-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--silver);
+        animation: typingBounce 1.4s infinite ease-in-out;
+      }
+      .typing-dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .typing-dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes typingBounce {
+        0%,
+        80%,
+        100% {
+          transform: scale(0.8);
+          opacity: 0.4;
+        }
+        40% {
+          transform: scale(1.1);
+          opacity: 1;
+        }
+      }
+
+      /* ── Chat footer / controls ── */
+      .chat-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .play-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .play-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .btn-primary {
+        background: var(--teal);
+        color: white;
+      }
+      .btn-primary:hover:not(:disabled) {
+        background: var(--teal-mid);
+      }
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        color: var(--silver);
+      }
+      .btn-secondary:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--snow);
+      }
+      .btn-amber {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: var(--amber);
+      }
+      .btn-amber:hover:not(:disabled) {
+        background: rgba(245, 158, 11, 0.25);
+      }
+
+      /* ── Side panel ── */
+      .side-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .panel-card {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .panel-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .panel-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--silver);
+      }
+      .panel-count {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--teal-lt);
+        background: var(--teal-glow);
+        border: 1px solid rgba(20, 184, 166, 0.2);
+        padding: 2px 8px;
+        border-radius: 10px;
+      }
+
+      /* ── Thread info ── */
+      .thread-info {
+        padding: 14px 16px;
+      }
+      .thread-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .thread-row:last-child {
+        margin-bottom: 0;
+      }
+      .thread-label {
+        font-size: 12px;
+        color: var(--silver);
+      }
+      .thread-value {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--snow);
+      }
+      .thread-value.mono {
+        font-family: "SF Mono", "Fira Code", monospace;
+        color: var(--teal-lt);
+      }
+
+      /* ── Pipeline animation ── */
+      .pipeline-card {
+        display: none;
+      }
+      .pipeline-card.show {
+        display: block;
+      }
+      .pipeline-body {
+        padding: 14px 16px;
+      }
+      .pipeline-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        opacity: 0.3;
+        transition: opacity 0.3s ease;
+      }
+      .pipeline-step:last-child {
+        border-bottom: none;
+      }
+      .pipeline-step.active {
+        opacity: 1;
+      }
+      .pipeline-step.done {
+        opacity: 0.7;
+      }
+      .step-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        color: var(--silver);
+      }
+      .pipeline-step.active .step-icon {
+        background: var(--teal-glow);
+        border-color: rgba(20, 184, 166, 0.3);
+        color: var(--teal-lt);
+      }
+      .pipeline-step.done .step-icon {
+        background: rgba(34, 197, 94, 0.1);
+        border-color: rgba(34, 197, 94, 0.3);
+        color: var(--green);
+      }
+      .step-text {
+        color: var(--snow);
+      }
+      .step-sub {
+        font-size: 11px;
+        color: var(--silver);
+      }
+
+      /* ── Memory items ── */
+      .memories-body {
+        padding: 8px;
+      }
+      .memory-empty {
+        padding: 24px 16px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--silver);
+      }
+      .memory-empty-icon {
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+      .memory-item {
+        padding: 10px 12px;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
+        animation: memoryPop 0.4s ease forwards;
+        opacity: 0;
+        transform: scale(0.96) translateY(4px);
+      }
+      .memory-item:last-child {
+        margin-bottom: 0;
+      }
+      @keyframes memoryPop {
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+      .memory-content {
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: var(--snow);
+      }
+      .memory-source {
+        display: inline-block;
+        margin-top: 5px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 2px 7px;
+        border-radius: 10px;
+      }
+      .source-confirmed {
+        background: rgba(34, 197, 94, 0.1);
+        color: var(--green);
+        border: 1px solid rgba(34, 197, 94, 0.2);
+      }
+      .source-inferred {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+      }
+
+      /* ── Code preview ── */
+      .code-section {
+        max-width: 1100px;
+        margin: 0 auto 60px;
+        padding: 0 24px;
+      }
+      .code-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .code-header h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--snow);
+      }
+      .code-header a {
+        font-size: 13px;
+        color: var(--teal-lt);
+        text-decoration: none;
+      }
+      .code-header a:hover {
+        text-decoration: underline;
+      }
+      pre {
+        background: var(--slate);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.65;
+        tab-size: 2;
+      }
+      pre::-webkit-scrollbar {
+        height: 4px;
+      }
+      pre::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      pre::-webkit-scrollbar-thumb {
+        background: var(--mid);
+        border-radius: 2px;
+      }
+      code {
+        font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      }
+      .kw {
+        color: #7dd3fc;
+      }
+      .fn {
+        color: #6ee7b7;
+      }
+      .str {
+        color: #fca5a5;
+      }
+      .cmt {
+        color: #64748b;
+        font-style: italic;
+      }
+      .num {
+        color: #fcd34d;
+      }
+
+      /* ── Disclaimer ── */
+      .disclaimer {
+        max-width: 1100px;
+        margin: 0 auto 40px;
+        padding: 0 24px;
+      }
+      .disclaimer-inner {
+        background: rgba(244, 63, 94, 0.04);
+        border: 1px solid rgba(244, 63, 94, 0.15);
+        border-radius: 10px;
+        padding: 14px 18px;
+        font-size: 12.5px;
+        color: var(--silver);
+        line-height: 1.5;
+      }
+      .disclaimer-inner strong {
+        color: #fda4af;
+      }
+      .disclaimer-inner a {
+        color: var(--teal-lt);
+      }
+
+      /* ── Footer ── */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 24px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--silver);
+      }
+      footer a {
+        color: var(--teal-lt);
+        text-decoration: none;
+      }
+      footer a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Nav -->
+    <nav>
+      <div class="nav-inner">
+        <a class="nav-logo" href="index.html">
+          <img
+            src="docs/brand/logo-concept-a.svg"
+            alt="Vitamem"
+            height="32"
+            style="height: 32px; width: auto"
+          />
+          <span class="nav-wordmark">vita<span>mem</span></span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li>
+            <a
+              href="https://github.com/yuw321/Vitamem"
+              target="_blank"
+              rel="noopener"
+              >GitHub</a
+            >
+          </li>
+          <li><a href="#code-preview" class="btn-nav">View Code</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div class="demo-badge">Interactive Demo</div>
+      <h1>Health Companion Memory in Action</h1>
+      <p>
+        Watch Vitamem extract facts from a conversation, deduplicate them, and
+        recall them in the next session — all without a database.
+      </p>
+      <div class="note-bar">
+        <span>★</span> Simulated demo — no backend, no API calls. Shows exact
+        Vitamem behavior.
+      </div>
+    </div>
+
+    <!-- How it works strip -->
+    <div class="how-strip">
+      <div class="how-title">What happens under the hood</div>
+      <div class="how-steps">
+        <div class="how-step">
+          <div class="how-step-num">01 · Active</div>
+          <div class="how-step-text">
+            <strong>Chat freely</strong>
+            Messages are stored in the thread. No embedding calls yet.
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="how-step-num">02 · End session</div>
+          <div class="how-step-text">
+            <strong>LLM extracts facts</strong>
+            One LLM call pulls structured health facts from the full
+            conversation.
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="how-step-num">03 · Dormant</div>
+          <div class="how-step-text">
+            <strong>Embed only the facts</strong>
+            ~6 facts = ~6 embedding calls. Not 1 per message.
+          </div>
+        </div>
+        <div class="how-step">
+          <div class="how-step-num">04 · New session</div>
+          <div class="how-step-text">
+            <strong>Retrieve and inject</strong>
+            Cosine search surfaces relevant memories. AI references them
+            naturally.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Demo -->
+    <div class="demo-wrap">
+      <div class="demo-grid">
+        <!-- Chat panel -->
+        <div class="chat-panel" id="chatPanel">
+          <div class="chat-header">
+            <div class="chat-title">
+              Health Companion
+              <span class="thread-state-badge state-active" id="stateBadge"
+                >Active</span
+              >
+            </div>
+            <span style="font-size: 11px; color: var(--silver)" id="threadId"
+              >thread_sess1_demo</span
+            >
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <!-- Messages injected by JS -->
+          </div>
+
+          <div class="chat-footer" id="chatFooter">
+            <button
+              class="play-btn btn-primary"
+              id="nextBtn"
+              onclick="nextStep()"
+            >
+              ▶ Start Demo
+            </button>
+          </div>
+        </div>
+
+        <!-- Side panel -->
+        <div class="side-panel">
+          <!-- Thread info -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <span class="panel-title">Thread Info</span>
+            </div>
+            <div class="thread-info">
+              <div class="thread-row">
+                <span class="thread-label">User</span>
+                <span class="thread-value">sarah@example.com</span>
+              </div>
+              <div class="thread-row">
+                <span class="thread-label">State</span>
+                <span class="thread-value" id="infoState">active</span>
+              </div>
+              <div class="thread-row">
+                <span class="thread-label">Messages</span>
+                <span class="thread-value" id="infoMsgCount">0</span>
+              </div>
+              <div class="thread-row">
+                <span class="thread-label">Memories</span>
+                <span class="thread-value" id="infoMemCount">0</span>
+              </div>
+              <div class="thread-row">
+                <span class="thread-label">Embed calls</span>
+                <span class="thread-value mono" id="infoEmbedCalls">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Extraction pipeline (hidden until triggered) -->
+          <div class="panel-card pipeline-card" id="pipelineCard">
+            <div class="panel-header">
+              <span class="panel-title">Extraction Pipeline</span>
+            </div>
+            <div class="pipeline-body">
+              <div class="pipeline-step" id="pStep1">
+                <div class="step-icon">1</div>
+                <div>
+                  <div class="step-text">LLM extraction</div>
+                  <div class="step-sub">1 API call · full conversation</div>
+                </div>
+              </div>
+              <div class="pipeline-step" id="pStep2">
+                <div class="step-icon">2</div>
+                <div>
+                  <div class="step-text">Embedding facts</div>
+                  <div class="step-sub">6 calls · extracted facts only</div>
+                </div>
+              </div>
+              <div class="pipeline-step" id="pStep3">
+                <div class="step-icon">3</div>
+                <div>
+                  <div class="step-text">Deduplication</div>
+                  <div class="step-sub">cosine similarity &ge; 0.92</div>
+                </div>
+              </div>
+              <div class="pipeline-step" id="pStep4">
+                <div class="step-icon">4</div>
+                <div>
+                  <div class="step-text">Saved to storage</div>
+                  <div class="step-sub">6 memories stored</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Memories panel -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <span class="panel-title">Memories</span>
+              <span class="panel-count" id="memCount">0</span>
+            </div>
+            <div class="memories-body" id="memoriesBody">
+              <div class="memory-empty" id="memEmpty">
+                <div class="memory-empty-icon">&#x1F9E0;</div>
+                No memories yet.<br />End the session to extract them.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Code preview -->
+    <div class="code-section" id="code-preview">
+      <div class="code-header">
+        <h3>The code behind this demo</h3>
+        <a
+          href="https://github.com/yuw321/Vitamem/tree/main/examples"
+          target="_blank"
+          rel="noopener"
+          >View full examples &rarr;</a
+        >
+      </div>
+      <pre><code><span class="kw">import</span> { createVitamem, InMemoryAdapter } <span class="kw">from</span> <span class="str">'vitamem'</span>;
+
+<span class="cmt">// Session 1: first check-in</span>
+<span class="kw">const</span> mem = <span class="kw">await</span> <span class="fn">createVitamem</span>({ llm, storage: <span class="kw">new</span> <span class="fn">InMemoryAdapter</span>() });
+<span class="kw">const</span> thread = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'sarah'</span> });
+
+<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"I've had Type 2 diabetes for 3 years"</span> });
+<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"Taking metformin 1000mg twice a day"</span> });
+<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"My last A1C was 7.4, goal is under 7.0"</span> });
+
+<span class="cmt">// End session: 1 LLM call extracts facts, then ~6 embedding calls (not 1 per message)</span>
+<span class="kw">await</span> mem.<span class="fn">triggerDormantTransition</span>(thread.id);
+
+<span class="cmt">// Session 2: return visit</span>
+<span class="kw">const</span> memories = <span class="kw">await</span> mem.<span class="fn">retrieve</span>({
+  userId: <span class="str">'sarah'</span>,
+  query: <span class="str">'diabetes medications'</span>,
+  limit: <span class="num">10</span>,
+});
+<span class="cmt">// [ { content: "Has Type 2 diabetes (3 years)", source: "confirmed" }, ... ]</span>
+
+<span class="kw">const</span> thread2 = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'sarah'</span> });
+<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread2.id, message: <span class="str">"Hey, I'm back!"</span> });
+<span class="cmt">// AI: "Welcome back! Last time we talked about your A1C goal of 7.0..."</span></code></pre>
+    </div>
+
+    <!-- Disclaimer -->
+    <div class="disclaimer">
+      <div class="disclaimer-inner">
+        <strong>Not a medical device.</strong> Vitamem is a developer library
+        for memory management. It is not intended to diagnose, treat, cure, or
+        prevent any medical condition. Applications using Vitamem should include
+        their own privacy policies, data handling disclosures, and appropriate
+        safety disclaimers.
+        <a href="docs/legal/disclaimer.mdx">Full disclaimer &rarr;</a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <p>
+        <a href="index.html">vitamem</a> &middot;
+        <a
+          href="https://github.com/yuw321/Vitamem"
+          target="_blank"
+          rel="noopener"
+          >GitHub</a
+        >
+        &middot;
+        <a
+          href="https://www.npmjs.com/package/vitamem"
+          target="_blank"
+          rel="noopener"
+          >npm</a
+        >
+        &middot; MIT License
+      </p>
+      <p style="margin-top: 6px">
+        Built for developers building health AI that actually remembers.
+      </p>
+    </footer>
+
+    <script>
+      // ── Demo data ──────────────────────────────────────────────────────────────
+
+      var MEMORIES = [
+        {
+          content: "Has Type 2 diabetes, diagnosed approximately 3 years ago",
+          source: "confirmed",
+        },
+        { content: "Takes metformin 1000mg twice daily", source: "confirmed" },
+        {
+          content: "Most recent A1C: 7.4 — target is below 7.0",
+          source: "confirmed",
+        },
+        {
+          content: "Exercises Monday, Wednesday, Friday (30 min cardio)",
+          source: "confirmed",
+        },
+        {
+          content: "Actively reducing carbohydrate intake to improve A1C",
+          source: "inferred",
+        },
+        {
+          content: "Primary care doctor monitoring medication effectiveness",
+          source: "inferred",
+        },
+      ];
+
+      var SESSION1 = [
+        {
+          role: "user",
+          text: "Hi! I've been managing Type 2 diabetes for about 3 years now.",
+        },
+        {
+          role: "ai",
+          text: "Hello! Thanks for sharing that with me. Living with diabetes takes a lot of daily attention — I'm glad you're here. How have things been going lately?",
+        },
+        {
+          role: "user",
+          text: "I take metformin 1000mg twice a day. My last A1C was 7.4.",
+        },
+        {
+          role: "ai",
+          text: "That's really helpful context. An A1C of 7.4 — are you working toward a specific target with your doctor, or just keeping an eye on it?",
+        },
+        {
+          role: "user",
+          text: "My doctor wants me to get it under 7.0. I exercise Mon/Wed/Fri and I've been cutting carbs.",
+        },
+        {
+          role: "ai",
+          text: "That's a solid routine — three days of exercise and reducing carbs are both evidence-backed ways to nudge A1C down. The 7.0 target is very achievable given what you're already doing. <em>I'll remember all of this for next time.</em>",
+        },
+      ];
+
+      var SESSION2 = [
+        { role: "user", text: "Hey, I'm back! Had a checkup yesterday." },
+        {
+          role: "ai",
+          text: "Welcome back! <em>I remember you've been working hard to get your A1C below 7.0</em> — you mentioned cutting carbs and exercising Monday, Wednesday, and Friday. How did the checkup go?",
+        },
+        { role: "user", text: "A1C is now 6.8! Doctor was really happy." },
+        {
+          role: "ai",
+          text: "That is fantastic — <em>down from 7.4 to 6.8!</em> That's real, measurable progress. Your consistency with exercise and the dietary changes is clearly working. Did your doctor say anything about the metformin going forward?",
+        },
+      ];
+
+      // ── State ─────────────────────────────────────────────────────────────────
+
+      var phase = "intro";
+      var s1idx = 0;
+      var s2idx = 0;
+      var msgCount = 0;
+      var memCount = 0;
+
+      // ── Entry point ───────────────────────────────────────────────────────────
+
+      function nextStep() {
+        if (phase === "intro") {
+          phase = "session1";
+          document.getElementById("nextBtn").textContent =
+            "\u25B6 Next message";
+          playSession1();
+          return;
+        }
+        if (phase === "session1") {
+          playSession1();
+          return;
+        }
+        if (phase === "endSession") {
+          endSession();
+          return;
+        }
+        if (phase === "newSession") {
+          startSession2();
+          return;
+        }
+        if (phase === "session2") {
+          playSession2();
+          return;
+        }
+      }
+
+      function playSession1() {
+        if (s1idx >= SESSION1.length) {
+          phase = "endSession";
+          var btn = document.getElementById("nextBtn");
+          btn.textContent = "\u25A0 End Session";
+          btn.className = "play-btn btn-amber";
+          return;
+        }
+        var msg = SESSION1[s1idx];
+        s1idx++;
+
+        if (msg.role === "user") {
+          disableNext();
+          appendMessage("user", msg.text, function () {
+            bumpMsgCount();
+            // Peek at next: if AI, show typing then deliver
+            setTimeout(function () {
+              showTyping(function () {
+                if (s1idx < SESSION1.length && SESSION1[s1idx].role === "ai") {
+                  var aiMsg = SESSION1[s1idx];
+                  s1idx++;
+                  appendMessage("ai", aiMsg.text, function () {
+                    bumpMsgCount();
+                    hideTyping();
+                    enableNext();
+                  });
+                } else {
+                  hideTyping();
+                  enableNext();
+                }
+              });
+            }, 300);
+          });
+        } else {
+          appendMessage("ai", msg.text, function () {
+            bumpMsgCount();
+            enableNext();
+          });
+        }
+      }
+
+      function endSession() {
+        disableNext();
+        setThreadState("cooling", "Cooling");
+        document.getElementById("infoState").textContent = "cooling";
+
+        setTimeout(function () {
+          setThreadState("dormant", "Dormant");
+          document.getElementById("infoState").textContent = "dormant";
+          showPipeline();
+        }, 900);
+      }
+
+      function showPipeline() {
+        document.getElementById("pipelineCard").classList.add("show");
+        runPipelineSteps(
+          [
+            { id: "pStep1", delay: 700 },
+            {
+              id: "pStep2",
+              delay: 1500,
+              onDone: function () {
+                document.getElementById("infoEmbedCalls").textContent = "6";
+              },
+            },
+            { id: "pStep3", delay: 900 },
+            { id: "pStep4", delay: 700, onDone: showMemories },
+          ],
+          0,
+          function () {
+            phase = "newSession";
+            var btn = document.getElementById("nextBtn");
+            btn.textContent = "\u25B6 Start New Session";
+            btn.className = "play-btn btn-primary";
+            enableNext();
+          },
+        );
+      }
+
+      function runPipelineSteps(steps, i, onAllDone) {
+        if (i >= steps.length) {
+          if (onAllDone) setTimeout(onAllDone, 500);
+          return;
+        }
+        var s = steps[i];
+        var el = document.getElementById(s.id);
+        el.classList.add("active");
+        setTimeout(function () {
+          if (s.onDone) s.onDone();
+          el.classList.remove("active");
+          el.classList.add("done");
+          el.querySelector(".step-icon").textContent = "\u2713";
+          runPipelineSteps(steps, i + 1, onAllDone);
+        }, s.delay);
+      }
+
+      function showMemories() {
+        document.getElementById("memEmpty").style.display = "none";
+        MEMORIES.forEach(function (m, i) {
+          setTimeout(function () {
+            addMemoryItem(m);
+          }, i * 220);
+        });
+      }
+
+      function startSession2() {
+        disableNext();
+        appendDivider("New Session \u2014 memories retrieved");
+        document.getElementById("threadId").textContent = "thread_sess2_demo";
+        setThreadState("new", "New Session");
+        document.getElementById("infoState").textContent = "active (new)";
+        setTimeout(function () {
+          setThreadState("active", "Active");
+          phase = "session2";
+          document.getElementById("nextBtn").textContent =
+            "\u25B6 Next message";
+          document.getElementById("nextBtn").className = "play-btn btn-primary";
+          enableNext();
+        }, 500);
+      }
+
+      function playSession2() {
+        if (s2idx >= SESSION2.length) {
+          phase = "done";
+          var btn = document.getElementById("nextBtn");
+          btn.textContent = "\u21BA Replay demo";
+          btn.className = "play-btn btn-secondary";
+          btn.onclick = replayDemo;
+          return;
+        }
+        var msg = SESSION2[s2idx];
+        s2idx++;
+
+        if (msg.role === "user") {
+          disableNext();
+          appendMessage("user", msg.text, function () {
+            bumpMsgCount();
+            setTimeout(function () {
+              showTyping(function () {
+                if (s2idx < SESSION2.length && SESSION2[s2idx].role === "ai") {
+                  var aiMsg = SESSION2[s2idx];
+                  s2idx++;
+                  appendMessage("ai", aiMsg.text, function () {
+                    bumpMsgCount();
+                    hideTyping();
+                    enableNext();
+                  });
+                } else {
+                  hideTyping();
+                  enableNext();
+                }
+              });
+            }, 400);
+          });
+        } else {
+          appendMessage("ai", msg.text, function () {
+            bumpMsgCount();
+            enableNext();
+          });
+        }
+      }
+
+      // ── DOM helpers ───────────────────────────────────────────────────────────
+
+      function appendMessage(role, html, onDone) {
+        var container = document.getElementById("chatMessages");
+        var wrapper = document.createElement("div");
+        wrapper.className = "msg " + role;
+
+        var avatar = document.createElement("div");
+        avatar.className = "msg-avatar";
+        avatar.textContent = role === "ai" ? "V" : "S";
+
+        var bubble = document.createElement("div");
+        bubble.className = "msg-bubble";
+        bubble.innerHTML = html;
+
+        wrapper.appendChild(avatar);
+        wrapper.appendChild(bubble);
+        container.appendChild(wrapper);
+        scrollChat();
+        if (onDone)
+          requestAnimationFrame(function () {
+            requestAnimationFrame(onDone);
+          });
+      }
+
+      function appendDivider(label) {
+        var container = document.getElementById("chatMessages");
+        var div = document.createElement("div");
+        div.style.cssText =
+          "text-align:center;font-size:11px;color:var(--teal-lt);font-weight:600;letter-spacing:0.6px;text-transform:uppercase;padding:8px 0;position:relative;";
+        var line = document.createElement("div");
+        line.style.cssText =
+          "position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(20,184,166,0.2);";
+        var text = document.createElement("span");
+        text.style.cssText =
+          "background:var(--slate);padding:0 10px;position:relative;z-index:1;";
+        text.textContent = label;
+        div.appendChild(line);
+        div.appendChild(text);
+        container.appendChild(div);
+        scrollChat();
+      }
+
+      var typingEl = null;
+      function showTyping(onDone) {
+        var container = document.getElementById("chatMessages");
+        var wrapper = document.createElement("div");
+        wrapper.className = "typing-wrapper";
+
+        var avatar = document.createElement("div");
+        avatar.className = "msg-avatar";
+        avatar.style.cssText =
+          "background:var(--teal-glow);color:var(--teal-lt);border:1px solid rgba(20,184,166,0.2);";
+        avatar.textContent = "V";
+
+        var indicator = document.createElement("div");
+        indicator.className = "typing-indicator";
+        for (var i = 0; i < 3; i++) {
+          var dot = document.createElement("div");
+          dot.className = "typing-dot";
+          indicator.appendChild(dot);
+        }
+        wrapper.appendChild(avatar);
+        wrapper.appendChild(indicator);
+        container.appendChild(wrapper);
+        typingEl = wrapper;
+        scrollChat();
+        setTimeout(onDone, 1100);
+      }
+
+      function hideTyping() {
+        if (typingEl && typingEl.parentNode) {
+          typingEl.parentNode.removeChild(typingEl);
+          typingEl = null;
+        }
+      }
+
+      function addMemoryItem(memory) {
+        var body = document.getElementById("memoriesBody");
+        var item = document.createElement("div");
+        item.className = "memory-item";
+        var content = document.createElement("div");
+        content.className = "memory-content";
+        content.textContent = memory.content;
+        var badge = document.createElement("span");
+        badge.className = "memory-source source-" + memory.source;
+        badge.textContent = memory.source;
+        item.appendChild(content);
+        item.appendChild(badge);
+        body.appendChild(item);
+        memCount++;
+        document.getElementById("memCount").textContent = memCount;
+        document.getElementById("infoMemCount").textContent = memCount;
+      }
+
+      function setThreadState(cls, label) {
+        var badge = document.getElementById("stateBadge");
+        badge.className = "thread-state-badge state-" + cls;
+        badge.textContent = label;
+      }
+
+      function bumpMsgCount() {
+        msgCount++;
+        document.getElementById("infoMsgCount").textContent = msgCount;
+      }
+
+      function scrollChat() {
+        var el = document.getElementById("chatMessages");
+        requestAnimationFrame(function () {
+          el.scrollTop = el.scrollHeight;
+        });
+      }
+
+      function disableNext() {
+        document.getElementById("nextBtn").disabled = true;
+      }
+      function enableNext() {
+        document.getElementById("nextBtn").disabled = false;
+      }
+
+      function replayDemo() {
+        phase = "intro";
+        s1idx = 0;
+        s2idx = 0;
+        msgCount = 0;
+        memCount = 0;
+
+        document.getElementById("chatMessages").innerHTML = "";
+        document.getElementById("memoriesBody").innerHTML =
+          '<div class="memory-empty" id="memEmpty">' +
+          '<div class="memory-empty-icon">&#x1F9E0;</div>' +
+          "No memories yet.<br>End the session to extract them.</div>";
+        document.getElementById("memCount").textContent = "0";
+        document.getElementById("infoMsgCount").textContent = "0";
+        document.getElementById("infoMemCount").textContent = "0";
+        document.getElementById("infoEmbedCalls").textContent = "0";
+        document.getElementById("infoState").textContent = "active";
+        document.getElementById("threadId").textContent = "thread_sess1_demo";
+        setThreadState("active", "Active");
+
+        document.getElementById("pipelineCard").classList.remove("show");
+        ["pStep1", "pStep2", "pStep3", "pStep4"].forEach(function (id, i) {
+          var el = document.getElementById(id);
+          el.className = "pipeline-step";
+          el.querySelector(".step-icon").textContent = String(i + 1);
+        });
+
+        var btn = document.getElementById("nextBtn");
+        btn.textContent = "\u25B6 Start Demo";
+        btn.className = "play-btn btn-primary";
+        btn.onclick = nextStep;
+        btn.disabled = false;
+      }
+    </script>
+  </body>
+</html>

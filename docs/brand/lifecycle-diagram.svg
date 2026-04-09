@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 320" width="900" height="320">
+  <defs>
+    <style>
+      .box { rx: 12; ry: 12; stroke-width: 2; }
+      .box-active { fill: #1a1f36; stroke: #1a1f36; }
+      .box-cooling { fill: #5b6b8a; stroke: #5b6b8a; }
+      .box-dormant { fill: #8e9ab5; stroke: #8e9ab5; }
+      .box-closed { fill: #cbd5e1; stroke: #cbd5e1; }
+      .box-memory { fill: #3b7a57; stroke: #3b7a57; }
+      .box-label { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 16px; font-weight: 600; fill: white; text-anchor: middle; }
+      .box-sublabel { font-family: 'SF Mono', monospace; font-size: 11px; fill: rgba(255,255,255,0.7); text-anchor: middle; }
+      .box-label-dark { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 16px; font-weight: 600; fill: #1a1f36; text-anchor: middle; }
+      .box-sublabel-dark { font-family: 'SF Mono', monospace; font-size: 11px; fill: #5b6b8a; text-anchor: middle; }
+      .arrow { fill: none; stroke: #8e9ab5; stroke-width: 2; stroke-linecap: round; marker-end: url(#arrowhead); }
+      .arrow-memory { fill: none; stroke: #3b7a57; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 6 4; marker-end: url(#arrowhead-green); }
+      .timeout { font-family: 'SF Mono', monospace; font-size: 11px; fill: #8e9ab5; text-anchor: middle; }
+      .note { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 12px; fill: #5b6b8a; text-anchor: middle; font-style: italic; }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#8e9ab5" />
+    </marker>
+    <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3b7a57" />
+    </marker>
+  </defs>
+
+  <!-- Active -->
+  <rect class="box box-active" x="40" y="100" width="150" height="70" />
+  <text class="box-label" x="115" y="138">Active</text>
+  <text class="box-sublabel" x="115" y="155">messages flowing</text>
+
+  <!-- Arrow: Active → Cooling -->
+  <line class="arrow" x1="190" y1="135" x2="250" y2="135" />
+  <text class="timeout" x="220" y="125">10 min</text>
+
+  <!-- Cooling -->
+  <rect class="box box-cooling" x="260" y="100" width="150" height="70" />
+  <text class="box-label" x="335" y="138">Cooling</text>
+  <text class="box-sublabel" x="335" y="155">recency window</text>
+
+  <!-- Arrow: Cooling → Dormant -->
+  <line class="arrow" x1="410" y1="135" x2="470" y2="135" />
+  <text class="timeout" x="440" y="125">6 hrs</text>
+
+  <!-- Dormant -->
+  <rect class="box box-dormant" x="480" y="100" width="150" height="70" />
+  <text class="box-label" x="555" y="138">Dormant</text>
+  <text class="box-sublabel" x="555" y="155">vector searchable</text>
+
+  <!-- Arrow: Dormant → Closed -->
+  <line class="arrow" x1="630" y1="135" x2="690" y2="135" />
+  <text class="timeout" x="660" y="125">30 days</text>
+
+  <!-- Closed -->
+  <rect class="box box-closed" x="700" y="100" width="150" height="70" />
+  <text class="box-label-dark" x="775" y="138">Closed</text>
+  <text class="box-sublabel-dark" x="775" y="155">archived</text>
+
+  <!-- Embedding computation note on Dormant -->
+  <line class="arrow-memory" x1="555" y1="170" x2="555" y2="230" />
+  <rect class="box box-memory" x="455" y="235" width="200" height="50" />
+  <text class="box-label" x="555" y="262">Embed Summary</text>
+  <text class="box-sublabel" x="555" y="278">5–20× fewer embed calls</text>
+
+  <!-- Title -->
+  <text style="font-family: -apple-system, sans-serif; font-size: 20px; font-weight: 700; fill: #1a1f36;" x="40" y="45">Thread Lifecycle</text>
+  <text style="font-family: -apple-system, sans-serif; font-size: 14px; fill: #8e9ab5;" x="40" y="68">Configurable timeouts at each transition. Embeddings computed at dormant — not at search time.</text>
+</svg>

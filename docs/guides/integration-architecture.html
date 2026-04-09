@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Integration Architecture | Vitamem Docs</title>
+    <meta name="description" content="Where Vitamem sits in your stack, how to trigger lifecycle transitions, and production deployment patterns." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Integration Architecture</h1>
+      <p class="description">Where Vitamem sits in your stack, how to trigger lifecycle transitions, and production deployment patterns.</p>
+      <h1>Integration Architecture</h1>
+<p>Vitamem is a <strong>library</strong>, not a hosted service. It runs inside your application process, calls the LLM and storage backends you configure, and returns results synchronously. There is no background daemon, no webhook receiver, and no separate infrastructure to manage.</p>
+<p>This guide covers where Vitamem fits in a typical stack, how to drive the thread lifecycle, and how to architect multi-session memory for production.</p>
+<h2>Where Vitamem Sits in Your Stack</h2>
+<pre><code>┌─────────────────────────────────────────────────┐
+│  Your Application (API server, chatbot, etc.)   │
+│                                                 │
+│   ┌───────────────────────────────────────────┐ │
+│   │             Vitamem (library)              │ │
+│   │                                           │ │
+│   │  createThread ─ chat ─ retrieve           │ │
+│   │  sweepThreads ─ triggerDormantTransition   │ │
+│   │  deleteMemory ─ deleteUserData            │ │
+│   └─────────┬────────────────┬────────────────┘ │
+│             │                │                   │
+│        LLM Adapter     Storage Adapter           │
+│             │                │                   │
+└─────────────┼────────────────┼───────────────────┘
+              │                │
+         ┌────▼────┐    ┌──────▼──────┐
+         │ OpenAI  │    │  Supabase   │
+         │ Claude  │    │  SQLite     │
+         │ Ollama  │    │  Ephemeral  │
+         └─────────┘    └─────────────┘
+</code></pre>
+<p>Key points:</p>
+<ul>
+<li><strong>No timers run inside Vitamem.</strong> Your application is responsible for calling <code>sweepThreads()</code> on a schedule.</li>
+<li><strong>No network listener.</strong> Vitamem does not open ports or accept inbound connections.</li>
+<li><strong>No global state.</strong> Each <code>createVitamem()</code> call returns an independent instance. You can run multiple instances with different configurations in the same process.</li>
+</ul>
+<h2>Triggering Lifecycle Transitions</h2>
+<p>There are three patterns for moving threads through their lifecycle: explicit, automatic, and hybrid. Choose based on your application's architecture.</p>
+<h3>Explicit Transitions</h3>
+<p>Call <code>triggerDormantTransition()</code> when your application knows a session has ended (user logs out, navigates away, closes a chat window).</p>
+<pre><code class="language-typescript">// User explicitly ends the session
+app.post(&quot;/api/session/end&quot;, async (req, res) =&gt; {
+  await mem.triggerDormantTransition(req.body.threadId);
+  res.json({ ok: true });
+});
+</code></pre>
+<p>This immediately transitions the thread through <code>active -&gt; cooling -&gt; dormant</code>, runs the embedding pipeline, and saves extracted memories. It does not wait for any timeout.</p>
+<p>Best for: applications where you have clear session boundaries (mobile apps, scheduled appointments, chat windows with a "close" button).</p>
+<h3>Automatic Transitions with <code>sweepThreads()</code></h3>
+<p>Call <code>sweepThreads()</code> on a recurring schedule. It scans all threads and applies transitions based on configured timeouts.</p>
+<pre><code class="language-typescript">import cron from &quot;node-cron&quot;;
+
+// Run every 15 minutes
+cron.schedule(&quot;*/15 * * * *&quot;, async () =&gt; {
+  await mem.sweepThreads();
+});
+</code></pre>
+<p>What <code>sweepThreads()</code> does on each call:</p>
+<ol>
+<li><strong>Active -&gt; Cooling</strong>: Threads with no messages for <code>coolingTimeoutMs</code> (default: 6 hours) transition to cooling.</li>
+<li><strong>Cooling -&gt; Dormant</strong>: Threads that have been cooling for <code>coolingTimeoutMs</code> transition to dormant. The embedding pipeline runs for each.</li>
+<li><strong>Dormant -&gt; Closed</strong>: Threads that have been dormant for <code>closedTimeoutMs</code> (default: 30 days) transition to closed.</li>
+</ol>
+<p>Best for: server-side applications that run continuously (API servers, background workers).</p>
+<p><Warning>
+<code>sweepThreads()</code> requires a storage adapter that implements the optional <code>getThreadsByState()</code> method. Both <code>EphemeralAdapter</code> and <code>SupabaseAdapter</code> support this. If you build a custom adapter, see the <a href="custom-storage.html">custom storage guide</a>.
+</Warning></p>
+<h3>Hybrid (Recommended for Production)</h3>
+<p>Combine both approaches for the most robust behavior:</p>
+<pre><code class="language-typescript">// Explicit: when user ends a session
+app.post(&quot;/api/session/end&quot;, async (req, res) =&gt; {
+  await mem.triggerDormantTransition(req.body.threadId);
+  res.json({ ok: true });
+});
+
+// Automatic: catch anything that was missed
+cron.schedule(&quot;*/15 * * * *&quot;, async () =&gt; {
+  await mem.sweepThreads();
+});
+</code></pre>
+<p>This way, sessions that end cleanly get immediate memory extraction, while abandoned sessions (browser closed, connection dropped) are cleaned up by the sweep.</p>
+<h2>Memory Injection Patterns</h2>
+<p>When a user returns for a new session, you need to inject their memories into the conversation context. There are two approaches.</p>
+<h3>Automatic with <code>autoRetrieve</code></h3>
+<p>Enable <code>autoRetrieve: true</code> in your config. On every <code>chat()</code> call, Vitamem will embed the user's message, search for relevant memories, and inject them as a system message before sending to the LLM.</p>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: &quot;ephemeral&quot;,
+  autoRetrieve: true,
+});
+
+// Memories are automatically injected -- no extra code needed
+const { reply, memories } = await mem.chat({
+  threadId: thread.id,
+  message: &quot;How should I adjust my diet?&quot;,
+});
+
+// `memories` contains what was injected, for transparency
+console.log(&quot;Injected memories:&quot;, memories);
+</code></pre>
+<p>See the <a href="../concepts/auto-retrieve.html">auto-retrieve concept doc</a> for details.</p>
+<h3>Manual with <code>retrieve()</code> + <code>systemPrompt</code></h3>
+<p>Call <code>retrieve()</code> yourself and build a custom system prompt. This gives you full control over formatting, filtering, and what context the LLM sees.</p>
+<pre><code class="language-typescript">const memories = await mem.retrieve({
+  userId,
+  query: &quot;health conditions medications&quot;,
+  limit: 10,
+});
+
+const memoryContext = memories
+  .map((m) =&gt; `- ${m.content} (${m.source})`)
+  .join(&quot;\n&quot;);
+
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: userMessage,
+  systemPrompt: `You are a health companion. Context from past sessions:\n${memoryContext}`,
+});
+</code></pre>
+<h2>Multi-Session Architecture</h2>
+<p>Vitamem ties threads together through the <code>userId</code> field. One user can have many threads, and memories from all threads are pooled together. When you call <code>retrieve()</code>, it searches across all of a user's memories regardless of which thread they came from.</p>
+<pre><code>User &quot;patient-456&quot;
+  ├── Thread A (closed) ── memories: diabetes, metformin
+  ├── Thread B (closed) ── memories: exercise routine, sleep issues
+  ├── Thread C (dormant) ── memories: started physical therapy
+  └── Thread D (active) ── current session
+</code></pre>
+<p>When Thread D calls <code>retrieve()</code>, it searches across memories from Threads A, B, and C.</p>
+<pre><code class="language-typescript">// Each session creates a new thread for the same user
+const thread = await mem.createThread({ userId: &quot;patient-456&quot; });
+
+// All past memories are available for retrieval
+const memories = await mem.retrieve({
+  userId: &quot;patient-456&quot;,
+  query: &quot;current medications&quot;,
+});
+</code></pre>
+<h2>Production Deployment with Supabase</h2>
+<p>For production, use <code>SupabaseAdapter</code> for durable storage with pgvector-powered semantic search.</p>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: &quot;supabase&quot;,
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  coolingTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours
+  closedTimeoutMs: 90 * 24 * 60 * 60 * 1000, // 90 days
+  embeddingConcurrency: 3, // conservative for rate limits
+  autoRetrieve: true,
+});
+</code></pre>
+<p>The Supabase adapter expects three tables (<code>threads</code>, <code>messages</code>, <code>memories</code>) and an optional <code>match_memories</code> RPC function for server-side vector search. If the RPC is not available, it falls back to client-side cosine similarity.</p>
+<h3>Supabase Schema (Required Tables)</h3>
+<pre><code class="language-sql">create table threads (
+  id uuid primary key,
+  user_id text not null,
+  state text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_message_at timestamptz,
+  cooling_started_at timestamptz,
+  dormant_at timestamptz,
+  closed_at timestamptz
+);
+
+create table messages (
+  id uuid primary key,
+  thread_id uuid references threads(id),
+  role text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Requires pgvector extension
+create extension if not exists vector;
+
+create table memories (
+  id uuid primary key,
+  user_id text not null,
+  thread_id uuid references threads(id),
+  content text not null,
+  source text not null,
+  embedding vector(1536),
+  created_at timestamptz not null default now()
+);
+
+-- Optional: server-side vector search for better performance
+create or replace function match_memories(
+  query_embedding vector(1536),
+  match_user_id text,
+  match_limit int default 10
+) returns table (content text, source text, similarity float) as $$
+  select
+    m.content,
+    m.source,
+    1 - (m.embedding &lt;=&gt; query_embedding) as similarity
+  from memories m
+  where m.user_id = match_user_id
+    and m.embedding is not null
+  order by m.embedding &lt;=&gt; query_embedding
+  limit match_limit;
+$$ language sql stable;
+</code></pre>
+<h3>Environment Configuration</h3>
+<pre><code class="language-bash"># .env
+OPENAI_API_KEY=sk-...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+</code></pre>
+<p><Warning>
+Use the <strong>service role key</strong> (not the anon key) on the server side. The anon key is subject to Row Level Security policies, which may prevent Vitamem from reading threads belonging to other users during sweep operations.
+</Warning></p>
+      <p class="source-note">Source: <code>guides/integration-architecture.mdx</code></p>
+    </main>
+  </body>
+</html>

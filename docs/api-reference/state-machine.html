@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>State Machine | Vitamem Docs</title>
+    <meta name="description" content="API reference for thread lifecycle state machine functions." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>State Machine</h1>
+      <p class="description">API reference for thread lifecycle state machine functions.</p>
+      <h1>State Machine</h1>
+<p>The state machine module (<code>vitamem/lifecycle/state-machine</code>) provides pure functions for managing thread lifecycle transitions. These functions are used internally by the Vitamem facade but are also exported for direct use when you need low-level control.</p>
+<p>All functions are imported from the main <code>vitamem</code> package:</p>
+<pre><code class="language-typescript">import {
+  canTransition,
+  transition,
+  shouldCool,
+  shouldGoDormant,
+  reactivate,
+  InvalidTransitionError,
+} from &quot;vitamem&quot;;
+</code></pre>
+<h2>Valid Transitions</h2>
+<p>The state machine enforces these transitions:</p>
+<table>
+<thead>
+<tr>
+<th>From</th>
+<th>Allowed targets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>active</code></td>
+<td><code>cooling</code></td>
+</tr>
+<tr>
+<td><code>cooling</code></td>
+<td><code>active</code>, <code>dormant</code></td>
+</tr>
+<tr>
+<td><code>dormant</code></td>
+<td><code>closed</code></td>
+</tr>
+<tr>
+<td><code>closed</code></td>
+<td>(none)</td>
+</tr>
+</tbody>
+</table>
+<p>These are defined by the <code>VALID_TRANSITIONS</code> constant:</p>
+<pre><code class="language-typescript">const VALID_TRANSITIONS: Record&lt;ThreadState, ThreadState[]&gt; = {
+  active: [&quot;cooling&quot;],
+  cooling: [&quot;active&quot;, &quot;dormant&quot;],
+  dormant: [&quot;closed&quot;],
+  closed: [],
+};
+</code></pre>
+<hr />
+<h2><code>canTransition(from, to)</code></h2>
+<p>Check whether a transition between two states is allowed without throwing.</p>
+<h3>Signature</h3>
+<pre><code class="language-typescript">function canTransition(from: ThreadState, to: ThreadState): boolean;
+</code></pre>
+<h3>Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from</code></td>
+<td><code>ThreadState</code></td>
+<td>The current state</td>
+</tr>
+<tr>
+<td><code>to</code></td>
+<td><code>ThreadState</code></td>
+<td>The desired target state</td>
+</tr>
+</tbody>
+</table>
+<h3>Returns</h3>
+<p><code>true</code> if the transition is valid, <code>false</code> otherwise.</p>
+<h3>Example</h3>
+<pre><code class="language-typescript">canTransition(&quot;active&quot;, &quot;cooling&quot;); // true
+canTransition(&quot;active&quot;, &quot;dormant&quot;); // false -- must go through cooling
+canTransition(&quot;closed&quot;, &quot;active&quot;); // false -- closed is terminal
+</code></pre>
+<hr />
+<h2><code>transition(thread, to)</code></h2>
+<p>Transition a thread to a new state. Returns a <strong>new</strong> <code>Thread</code> object with updated state and timestamps. The original thread object is not mutated.</p>
+<h3>Signature</h3>
+<pre><code class="language-typescript">function transition(thread: Thread, to: ThreadState): Thread;
+</code></pre>
+<h3>Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>thread</code></td>
+<td><code>Thread</code></td>
+<td>The thread to transition</td>
+</tr>
+<tr>
+<td><code>to</code></td>
+<td><code>ThreadState</code></td>
+<td>The target state</td>
+</tr>
+</tbody>
+</table>
+<h3>Returns</h3>
+<p>A new <code>Thread</code> object with:
+- <code>state</code> set to <code>to</code>
+- <code>updatedAt</code> set to the current time
+- State-specific timestamps updated:
+  - Transition to <code>cooling</code>: sets <code>coolingStartedAt</code>
+  - Transition to <code>dormant</code>: sets <code>dormantAt</code>, clears <code>coolingStartedAt</code>
+  - Transition to <code>closed</code>: sets <code>closedAt</code>
+  - Transition to <code>active</code>: clears <code>coolingStartedAt</code></p>
+<h3>Throws</h3>
+<p><code>InvalidTransitionError</code> if the transition is not allowed.</p>
+<h3>Example</h3>
+<pre><code class="language-typescript">// Active -&gt; Cooling
+const cooled = transition(activeThread, &quot;cooling&quot;);
+console.log(cooled.state); // &quot;cooling&quot;
+console.log(cooled.coolingStartedAt); // Date (just set)
+
+// Cooling -&gt; Dormant
+const dormant = transition(cooled, &quot;dormant&quot;);
+console.log(dormant.state); // &quot;dormant&quot;
+console.log(dormant.dormantAt); // Date (just set)
+console.log(dormant.coolingStartedAt); // null (cleared)
+
+// Invalid transition throws
+try {
+  transition(activeThread, &quot;dormant&quot;); // active -&gt; dormant not allowed
+} catch (e) {
+  console.log(e.message); // &quot;Invalid transition: active -&gt; dormant&quot;
+}
+</code></pre>
+<hr />
+<h2><code>shouldCool(thread, coolingTimeoutMs)</code></h2>
+<p>Determine whether an active thread should transition to cooling based on message inactivity.</p>
+<h3>Signature</h3>
+<pre><code class="language-typescript">function shouldCool(thread: Thread, coolingTimeoutMs: number): boolean;
+</code></pre>
+<h3>Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>thread</code></td>
+<td><code>Thread</code></td>
+<td>The thread to check</td>
+</tr>
+<tr>
+<td><code>coolingTimeoutMs</code></td>
+<td><code>number</code></td>
+<td>Milliseconds of inactivity before cooling (default in facade: 6 hours)</td>
+</tr>
+</tbody>
+</table>
+<h3>Returns</h3>
+<p><code>true</code> if all of these conditions are met:
+- The thread is in the <code>active</code> state
+- The thread has a <code>lastMessageAt</code> timestamp
+- The elapsed time since <code>lastMessageAt</code> is greater than or equal to <code>coolingTimeoutMs</code></p>
+<p>Returns <code>false</code> otherwise (including if the thread is not active or has no messages).</p>
+<h3>Example</h3>
+<pre><code class="language-typescript">const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+// Thread with recent activity
+shouldCool(recentThread, SIX_HOURS); // false
+
+// Thread inactive for 7 hours
+shouldCool(staleThread, SIX_HOURS); // true
+
+// Thread already cooling
+shouldCool(coolingThread, SIX_HOURS); // false (wrong state)
+</code></pre>
+<hr />
+<h2><code>shouldGoDormant(thread, dormantTimeoutMs)</code></h2>
+<p>Determine whether a cooling thread should transition to dormant.</p>
+<h3>Signature</h3>
+<pre><code class="language-typescript">function shouldGoDormant(thread: Thread, dormantTimeoutMs: number): boolean;
+</code></pre>
+<h3>Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>thread</code></td>
+<td><code>Thread</code></td>
+<td>The thread to check</td>
+</tr>
+<tr>
+<td><code>dormantTimeoutMs</code></td>
+<td><code>number</code></td>
+<td>Milliseconds in cooling before going dormant (default in facade: 6 hours)</td>
+</tr>
+</tbody>
+</table>
+<h3>Returns</h3>
+<p><code>true</code> if all of these conditions are met:
+- The thread is in the <code>cooling</code> state
+- The thread has a <code>coolingStartedAt</code> timestamp
+- The elapsed time since <code>coolingStartedAt</code> is greater than or equal to <code>dormantTimeoutMs</code></p>
+<p>Returns <code>false</code> otherwise.</p>
+<h3>Example</h3>
+<pre><code class="language-typescript">const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+// Thread just started cooling
+shouldGoDormant(justCooled, SIX_HOURS); // false
+
+// Thread has been cooling for 7 hours
+shouldGoDormant(longCooled, SIX_HOURS); // true
+</code></pre>
+<hr />
+<h2><code>reactivate(thread)</code></h2>
+<p>Reactivate a cooling thread back to active state. This is a convenience function equivalent to <code>transition(thread, "active")</code>.</p>
+<h3>Signature</h3>
+<pre><code class="language-typescript">function reactivate(thread: Thread): Thread;
+</code></pre>
+<h3>Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>thread</code></td>
+<td><code>Thread</code></td>
+<td>The thread to reactivate (must be in <code>cooling</code> state)</td>
+</tr>
+</tbody>
+</table>
+<h3>Returns</h3>
+<p>A new <code>Thread</code> object with:
+- <code>state</code> set to <code>"active"</code>
+- <code>coolingStartedAt</code> cleared to <code>null</code>
+- <code>updatedAt</code> set to the current time</p>
+<h3>Throws</h3>
+<p><code>InvalidTransitionError</code> if the thread is not in the <code>cooling</code> state.</p>
+<h3>Example</h3>
+<pre><code class="language-typescript">// Thread is cooling, user sends a new message
+const active = reactivate(coolingThread);
+console.log(active.state); // &quot;active&quot;
+console.log(active.coolingStartedAt); // null
+</code></pre>
+<p><Note>
+In normal usage, you do not need to call <code>reactivate()</code> directly. The Vitamem facade's <code>chat()</code> method automatically reactivates cooling threads when a new message arrives.
+</Note></p>
+<hr />
+<h2><code>InvalidTransitionError</code></h2>
+<p>Error class thrown when an invalid state transition is attempted.</p>
+<h3>Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>string</code></td>
+<td>Always <code>"InvalidTransitionError"</code></td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td><code>string</code></td>
+<td><code>"Invalid transition: {from} -&gt; {to}"</code></td>
+</tr>
+</tbody>
+</table>
+<h3>Example</h3>
+<pre><code class="language-typescript">import { transition, InvalidTransitionError } from &quot;vitamem&quot;;
+
+try {
+  transition(dormantThread, &quot;active&quot;);
+} catch (e) {
+  if (e instanceof InvalidTransitionError) {
+    console.log(e.message); // &quot;Invalid transition: dormant -&gt; active&quot;
+  }
+}
+</code></pre>
+      <p class="source-note">Source: <code>api-reference/state-machine.mdx</code></p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thread Lifecycle | Vitamem Docs</title>
+    <meta name="description" content="How Vitamem models conversations as threads moving through four states." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Thread Lifecycle</h1>
+      <p class="description">How Vitamem models conversations as threads moving through four states.</p>
+      <h1>Thread Lifecycle</h1>
+<p>Every conversation in Vitamem is a <strong>thread</strong> -- an object that moves through four lifecycle states. This lifecycle is the core innovation: it models the natural rhythm of care relationships rather than treating all interactions as a flat stream of messages.</p>
+<h2>The Four States</h2>
+<pre><code>Active → Cooling → Dormant → Closed
+  💬        ⏳        🧠        📦
+</code></pre>
+<h3>Active</h3>
+<p>The thread is in an ongoing conversation. Messages are stored in full. No embeddings are computed yet -- that would be wasteful while the conversation is still evolving.</p>
+<p><strong>Entry conditions:</strong> Thread just created, or reactivated from Cooling when a new message arrives.</p>
+<h3>Cooling</h3>
+<p>The conversation has paused. A configurable timer starts (default: 6 hours). During this window, if the user sends a new message, the thread is automatically returned to Active -- the conversation resumes seamlessly.</p>
+<p><strong>Entry conditions:</strong> No messages for <code>coolingTimeoutMs</code> (default: 6 hours).</p>
+<p><strong>Exit conditions:</strong></p>
+<ul>
+<li>New message arrives -&gt; back to <strong>Active</strong></li>
+<li>Cooling timer expires -&gt; forward to <strong>Dormant</strong></li>
+</ul>
+<h3>Dormant</h3>
+<p>The key transition. The thread runs the <strong>embedding pipeline</strong>:</p>
+<ol>
+<li>LLM extracts facts from all conversation messages</li>
+<li>Each fact is embedded into a vector</li>
+<li>New facts are deduplicated against existing user memories (cosine similarity &gt;= 0.92)</li>
+<li>Unique facts are saved to the memory store</li>
+</ol>
+<p>After this, the raw messages no longer need to be processed again. The compressed, deduplicated facts represent everything worth remembering from the conversation.</p>
+<p><strong>Entry conditions:</strong> Cooling timer expires, or <code>triggerDormantTransition()</code> called explicitly.</p>
+<h3>Closed</h3>
+<p>Terminal state. The thread is fully archived. The extracted memories remain in the memory store and are searchable indefinitely. No further processing happens.</p>
+<p><strong>Entry conditions:</strong>
+- <code>closeThread()</code> called explicitly (only valid from Dormant)
+- <code>sweepThreads()</code> auto-closes threads that have been dormant for <code>closedTimeoutMs</code> (default: 30 days)</p>
+<h2>State Transition Diagram</h2>
+<pre><code>                new message
+                    ↓
+  ┌────────┐   ┌─────────┐   ┌─────────┐   ┌────────┐
+  │ active │──▶│ cooling │──▶│ dormant │──▶│ closed │
+  └────────┘   └─────────┘   └─────────┘   └────────┘
+                    │              ▲
+                    │  reactivate  │
+                    └──────────────┘
+                  (new message)
+</code></pre>
+<p>All invalid transitions throw an <code>InvalidTransitionError</code>.</p>
+<h2>Valid Transitions</h2>
+<table>
+<thead>
+<tr>
+<th>From</th>
+<th>To</th>
+<th>Trigger</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>active</code></td>
+<td><code>cooling</code></td>
+<td>No messages for <code>coolingTimeoutMs</code></td>
+</tr>
+<tr>
+<td><code>cooling</code></td>
+<td><code>active</code></td>
+<td>New message arrives (automatic in <code>chat()</code>)</td>
+</tr>
+<tr>
+<td><code>cooling</code></td>
+<td><code>dormant</code></td>
+<td>Cooling timer expires, or <code>triggerDormantTransition()</code></td>
+</tr>
+<tr>
+<td><code>dormant</code></td>
+<td><code>closed</code></td>
+<td>Explicit <code>closeThread()</code> call, or <code>sweepThreads()</code> auto-close after <code>closedTimeoutMs</code></td>
+</tr>
+</tbody>
+</table>
+<h2><code>sweepThreads()</code></h2>
+<p>The <code>sweepThreads()</code> method handles <strong>all</strong> lifecycle transitions in a single call. It is the recommended way to drive the lifecycle in production.</p>
+<pre><code class="language-typescript">await mem.sweepThreads();
+</code></pre>
+<p>On each invocation, it performs three passes:</p>
+<ol>
+<li>
+<p><strong>Active -&gt; Cooling</strong>: Finds all <code>active</code> threads where <code>lastMessageAt</code> is older than <code>coolingTimeoutMs</code> and transitions them to <code>cooling</code>.</p>
+</li>
+<li>
+<p><strong>Cooling -&gt; Dormant</strong>: Finds all <code>cooling</code> threads where <code>coolingStartedAt</code> is older than <code>coolingTimeoutMs</code> and transitions them to <code>dormant</code>. The <a href="../api-reference/embedding-pipeline.html">embedding pipeline</a> runs for each, extracting and saving memories.</p>
+</li>
+<li>
+<p><strong>Dormant -&gt; Closed</strong>: Finds all <code>dormant</code> threads where <code>dormantAt</code> is older than <code>closedTimeoutMs</code> and transitions them to <code>closed</code>.</p>
+</li>
+</ol>
+<h3>Scheduling <code>sweepThreads()</code></h3>
+<p>Vitamem does <strong>not</strong> run timers internally. Your application is responsible for calling <code>sweepThreads()</code> on a schedule. Common patterns:</p>
+<pre><code class="language-typescript">// Using node-cron
+import cron from &quot;node-cron&quot;;
+cron.schedule(&quot;*/15 * * * *&quot;, () =&gt; mem.sweepThreads());
+
+// Using setInterval
+setInterval(() =&gt; mem.sweepThreads(), 15 * 60 * 1000);
+
+// In a serverless environment (e.g., Vercel cron job, AWS Lambda on schedule)
+export async function handler() {
+  const mem = await createVitamem({ /* ... */ });
+  await mem.sweepThreads();
+}
+</code></pre>
+<p><Warning>
+<code>sweepThreads()</code> requires a storage adapter that implements the optional <code>getThreadsByState()</code> method. Both <code>EphemeralAdapter</code> and <code>SupabaseAdapter</code> implement it. If you use a custom adapter without this method, <code>sweepThreads()</code> will throw an error.
+</Warning></p>
+<h2>Auto-Close with <code>closedTimeoutMs</code></h2>
+<p>The <code>closedTimeoutMs</code> config option (default: 30 days) controls how long a dormant thread lives before <code>sweepThreads()</code> automatically closes it. This prevents dormant threads from accumulating indefinitely.</p>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: &quot;ephemeral&quot;,
+  closedTimeoutMs: 90 * 24 * 60 * 60 * 1000, // 90 days before auto-close
+});
+</code></pre>
+<p>Set <code>closedTimeoutMs</code> to a very large value if you want dormant threads to remain open until explicitly closed.</p>
+<p>Closing a thread does not delete its extracted memories. Memories remain in the store and are searchable indefinitely via <code>retrieve()</code>.</p>
+<h2>Reactivation</h2>
+<p>When <code>chat()</code> is called on a <code>cooling</code> thread, it automatically reactivates to <code>active</code> before processing the message. This means application code never needs to manually handle the cooling -&gt; active transition -- it just works.</p>
+<pre><code class="language-typescript">// Thread is in 'cooling' state
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: &quot;I have a follow-up question.&quot;,
+});
+// Thread is now back to 'active' — no manual reactivation needed
+</code></pre>
+<p>This reactivation pattern is especially important for health companions, where users often return after gaps of days or weeks.</p>
+<h2>Configuring Timeouts</h2>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: &quot;ephemeral&quot;,
+  coolingTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours (default: 6 hours)
+  closedTimeoutMs: 30 * 24 * 60 * 60 * 1000, // 30 days (default)
+});
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Config</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>coolingTimeoutMs</code></td>
+<td><code>21600000</code> (6 hours)</td>
+<td>Inactivity before <code>active -&gt; cooling</code>, and time in <code>cooling</code> before <code>cooling -&gt; dormant</code></td>
+</tr>
+<tr>
+<td><code>closedTimeoutMs</code></td>
+<td><code>2592000000</code> (30 days)</td>
+<td>Time in <code>dormant</code> before <code>sweepThreads()</code> auto-closes</td>
+</tr>
+</tbody>
+</table>
+<h2>Why This Design?</h2>
+<p>The lifecycle states map directly to how health relationships actually work:</p>
+<ul>
+<li>A therapy session is <strong>active</strong> while the user is engaged</li>
+<li>The period between appointments is <strong>cooling</strong> -- the relationship is still live</li>
+<li>An extended break (vacation, life events) triggers <strong>dormant</strong> -- memories are compressed</li>
+<li>Discharge from a care program is <strong>closed</strong> -- the record is preserved but no longer processed</li>
+</ul>
+<p>This means Vitamem's architecture aligns with clinical workflow patterns out of the box, without requiring custom logic.</p>
+      <p class="source-note">Source: <code>concepts/thread-lifecycle.mdx</code></p>
+    </main>
+  </body>
+</html>

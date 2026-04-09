@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Auto-Retrieve | Vitamem Docs</title>
+    <meta name="description" content="How autoRetrieve automatically injects relevant memories into every chat message." />
+    <style>
+:root {
+  --bg: #0f172a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #14b8a6;
+  --border: rgba(148, 163, 184, 0.25);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-links {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+h1, h2, h3, h4, h5 { line-height: 1.3; margin-top: 1.2em; margin-bottom: 0.4em; color: #f8fafc; }
+h1 { font-size: clamp(28px, 5vw, 38px); margin-top: 0.2em; }
+h2 { font-size: clamp(22px, 3.7vw, 28px); border-top: 1px solid var(--border); padding-top: 18px; }
+h3 { font-size: clamp(18px, 2.8vw, 22px); }
+p { margin: 0 0 14px; color: var(--text); }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin: 5px 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text);
+}
+pre {
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.94em;
+}
+p > code, li > code {
+  background: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  overflow-x: auto;
+  display: block;
+}
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: rgba(148, 163, 184, 0.12); }
+.description {
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.source-note {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .header-inner { flex-direction: column; align-items: flex-start; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div><span class="badge">Vitamem Docs</span></div>
+        <div class="header-links">
+          <a href="../../index.html#documentation">Home</a>
+          <a href="../../index.html#quick-start">Quick Start</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <h1>Auto-Retrieve</h1>
+      <p class="description">How autoRetrieve automatically injects relevant memories into every chat message.</p>
+      <h1>Auto-Retrieve</h1>
+<p>When <code>autoRetrieve</code> is enabled, Vitamem automatically searches the user's memory store on every <code>chat()</code> call and injects relevant memories as a system message before sending the conversation to the LLM. This means your application does not need to call <code>retrieve()</code> or build memory-aware system prompts manually.</p>
+<h2>How It Works</h2>
+<p>With <code>autoRetrieve: true</code>, every call to <code>chat()</code> performs these additional steps:</p>
+<ol>
+<li><strong>Embed the user's message</strong> -- Vitamem calls <code>llm.embed(message)</code> to get a vector representation of what the user just said.</li>
+<li><strong>Search memories</strong> -- The embedding is used to search the user's memory store via <code>storage.searchMemories()</code>, returning the most semantically similar facts.</li>
+<li><strong>Inject as system message</strong> -- If any memories are found, Vitamem prepends a system message to the conversation with the format:</li>
+</ol>
+<pre><code>Relevant context from previous sessions:
+- Has Type 2 diabetes (confirmed)
+- Takes metformin 500mg twice daily (confirmed)
+- Prefers morning check-ins (inferred)
+</code></pre>
+<ol start="4">
+<li><strong>Return memories for transparency</strong> -- The <code>chat()</code> response includes a <code>memories</code> field containing the <code>MemoryMatch[]</code> that were injected, so your application can log or display them.</li>
+</ol>
+<h2>Enabling Auto-Retrieve</h2>
+<pre><code class="language-typescript">const mem = await createVitamem({
+  provider: &quot;openai&quot;,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: &quot;ephemeral&quot;,
+  autoRetrieve: true, // default: false
+});
+</code></pre>
+<h2>Using It</h2>
+<pre><code class="language-typescript">const { reply, thread, memories } = await mem.chat({
+  threadId: thread.id,
+  message: &quot;How should I adjust my diet?&quot;,
+});
+
+// `memories` contains what was injected
+if (memories &amp;&amp; memories.length &gt; 0) {
+  console.log(&quot;Context injected:&quot;);
+  for (const m of memories) {
+    console.log(`  - ${m.content} (${m.source}, score: ${m.score.toFixed(2)})`);
+  }
+}
+</code></pre>
+<p>The <code>memories</code> field is only present when <code>autoRetrieve</code> is enabled. When disabled, it is <code>undefined</code>.</p>
+<h2>Auto-Retrieve vs Manual Retrieve</h2>
+<p>There are two patterns for getting memories into your LLM context. Each has trade-offs.</p>
+<h3>Auto-Retrieve (<code>autoRetrieve: true</code>)</h3>
+<pre><code class="language-typescript">// Just call chat() -- memories are injected automatically
+const { reply, memories } = await mem.chat({
+  threadId: thread.id,
+  message: userMessage,
+});
+</code></pre>
+<p><strong>Advantages:</strong>
+- Zero boilerplate -- works out of the box
+- Every message gets relevant context, even mid-conversation
+- The injected system message format is consistent</p>
+<p><strong>Trade-offs:</strong>
+- One extra embedding API call per <code>chat()</code> call (the user's message must be embedded to search)
+- You cannot customize which memories are injected or how they are formatted
+- The search query is always the raw user message, which may not be the best retrieval query for every situation</p>
+<h3>Manual Retrieve (<code>retrieve()</code> + <code>systemPrompt</code>)</h3>
+<pre><code class="language-typescript">// 1. Retrieve memories with a custom query
+const memories = await mem.retrieve({
+  userId,
+  query: &quot;medications health conditions current treatment&quot;,
+  limit: 5,
+});
+
+// 2. Format however you want
+const context = memories
+  .filter((m) =&gt; m.score &gt; 0.7) // custom threshold
+  .map((m) =&gt; `${m.content}`)
+  .join(&quot;\n&quot;);
+
+// 3. Inject via systemPrompt
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: userMessage,
+  systemPrompt: `Patient context:\n${context}\n\nRespond as a caring health companion.`,
+});
+</code></pre>
+<p><strong>Advantages:</strong>
+- Full control over the retrieval query (can be different from the user's message)
+- Custom filtering (score thresholds, source filtering, topic-specific queries)
+- Custom formatting of the injected context
+- Can retrieve once per session instead of once per message</p>
+<p><strong>Trade-offs:</strong>
+- More code to write and maintain
+- You must remember to retrieve and inject on every relevant interaction</p>
+<h2>When to Use Each</h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prototyping or simple chat apps</td>
+<td><code>autoRetrieve: true</code></td>
+</tr>
+<tr>
+<td>Health companion with topic-specific queries</td>
+<td>Manual <code>retrieve()</code></td>
+</tr>
+<tr>
+<td>High-volume API with cost concerns</td>
+<td>Manual <code>retrieve()</code> (retrieve once per session, not per message)</td>
+</tr>
+<tr>
+<td>Multi-turn conversation where context matters throughout</td>
+<td><code>autoRetrieve: true</code></td>
+</tr>
+<tr>
+<td>You need to filter by memory source (<code>confirmed</code> only)</td>
+<td>Manual <code>retrieve()</code></td>
+</tr>
+<tr>
+<td>You want the simplest possible integration</td>
+<td><code>autoRetrieve: true</code></td>
+</tr>
+</tbody>
+</table>
+<h2>Combining Both</h2>
+<p>You can enable <code>autoRetrieve</code> and still pass a <code>systemPrompt</code>. Both will be included. The auto-retrieved memories are injected as the first system message, followed by your custom system prompt:</p>
+<pre><code class="language-typescript">const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: &quot;What about my exercise routine?&quot;,
+  systemPrompt: &quot;You are a supportive health companion. Be warm and encouraging.&quot;,
+});
+
+// The LLM sees:
+// 1. System: &quot;Relevant context from previous sessions: ...&quot; (auto-injected)
+// 2. System: &quot;You are a supportive health companion. ...&quot; (your prompt)
+// 3. User/assistant message history
+// 4. User: &quot;What about my exercise routine?&quot;
+</code></pre>
+<h2>Performance Considerations</h2>
+<p>Each <code>chat()</code> call with <code>autoRetrieve</code> makes one additional API call to your embedding provider (<code>llm.embed()</code>). For OpenAI's <code>text-embedding-3-small</code>, this adds roughly 10-50ms of latency and costs $0.00002 per call (as of early 2026).</p>
+<p>If latency or cost is a concern, prefer the manual approach: call <code>retrieve()</code> once when the session starts and pass the result as <code>systemPrompt</code> for all subsequent messages in that session.</p>
+      <p class="source-note">Source: <code>concepts/auto-retrieve.mdx</code></p>
+    </main>
+  </body>
+</html>
