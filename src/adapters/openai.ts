@@ -6,6 +6,30 @@ export interface OpenAIAdapterOptions {
   embeddingModel?: string;
   baseUrl?: string;
   extractionPrompt?: string;
+
+  /**
+   * Which OpenAI API surface to use for chat / extraction calls.
+   * - `'completions'` — POST /v1/chat/completions (default, widely compatible)
+   * - `'responses'` — POST /v1/responses (OpenAI's newer API with extended features)
+   *
+   * @default 'completions'
+   */
+  apiMode?: 'completions' | 'responses';
+
+  /**
+   * Pass-through options spread into every chat / completion SDK call.
+   * Allows provider-specific parameters without explicit Vitamem support.
+   *
+   * @example { temperature: 0.7, max_tokens: 1024, reasoning: { effort: "medium" } }
+   */
+  extraChatOptions?: Record<string, unknown>;
+
+  /**
+   * Pass-through options spread into every embedding SDK call.
+   *
+   * @example { dimensions: 512 }
+   */
+  extraEmbeddingOptions?: Record<string, unknown>;
 }
 
 const DEFAULT_CHAT_MODEL = "gpt-5.4-mini";
@@ -26,6 +50,17 @@ Guidelines:
 - Skip greetings, questions, and one-time events
 - Be specific (include numbers, dosages, dates when mentioned)`;
 
+/**
+ * Strip options that are only valid for streaming calls.
+ * DashScope (and potentially other providers) reject `enable_thinking`
+ * when `stream` is not set to `true`.
+ */
+function nonStreamOptions(opts: Record<string, unknown>): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { enable_thinking, ...rest } = opts;
+  return rest;
+}
+
 function cleanJsonResponse(raw: string): string {
   return raw
     .replace(/^```(?:json)?\n?/, "")
@@ -43,6 +78,9 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
   const chatModel = opts.chatModel ?? DEFAULT_CHAT_MODEL;
   const embeddingModel = opts.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
   const extractionPrompt = opts.extractionPrompt ?? DEFAULT_EXTRACTION_PROMPT;
+  const apiMode = opts.apiMode ?? 'completions';
+  const extraChatOptions = opts.extraChatOptions ?? {};
+  const extraEmbeddingOptions = opts.extraEmbeddingOptions ?? {};
 
   // Lazy-load the OpenAI SDK to keep it as an optional peer dependency
   let clientPromise: Promise<InstanceType<any>> | null = null;
@@ -64,14 +102,69 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
       messages: Array<{ role: string; content: string }>,
     ): Promise<string> {
       const client = await getClient();
+
+      // Non-streaming calls must not include streaming-only options
+      const safeOpts = nonStreamOptions(extraChatOptions);
+
+      if (apiMode === 'responses') {
+        const response = await client.responses.create({
+          model: chatModel,
+          input: messages.map((m) => ({
+            role: m.role as "user" | "assistant" | "system",
+            content: m.content,
+          })),
+          ...safeOpts,
+        });
+        return response.output_text ?? "";
+      }
+
       const response = await client.chat.completions.create({
         model: chatModel,
         messages: messages.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
         })),
+        ...safeOpts,
       });
       return response.choices[0].message.content ?? "";
+    },
+
+    async *chatStream(
+      messages: Array<{ role: string; content: string }>,
+    ): AsyncGenerator<string, void, unknown> {
+      const client = await getClient();
+
+      if (apiMode === 'responses') {
+        const stream = await client.responses.create({
+          model: chatModel,
+          input: messages.map((m) => ({
+            role: m.role as "user" | "assistant" | "system",
+            content: m.content,
+          })),
+          stream: true,
+          ...extraChatOptions,
+        });
+        for await (const event of stream) {
+          if (event.type === 'response.output_text.delta') {
+            yield event.delta;
+          }
+        }
+        return;
+      }
+
+      const stream = await client.chat.completions.create({
+        model: chatModel,
+        messages: messages.map((m) => ({
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+        })),
+        stream: true,
+        ...extraChatOptions,
+      });
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) yield content;
+      }
     },
 
     async extractMemories(
@@ -84,12 +177,26 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
       const prompt = extractionPrompt.replace("{conversation}", conversation);
 
       const client = await getClient();
-      const response = await client.chat.completions.create({
-        model: chatModel,
-        messages: [{ role: "user", content: prompt }],
-      });
 
-      const raw = response.choices[0].message.content ?? "[]";
+      // Non-streaming calls must not include streaming-only options
+      const safeOpts = nonStreamOptions(extraChatOptions);
+
+      let raw: string;
+      if (apiMode === 'responses') {
+        const response = await client.responses.create({
+          model: chatModel,
+          input: [{ role: "user", content: prompt }],
+          ...safeOpts,
+        });
+        raw = response.output_text ?? "[]";
+      } else {
+        const response = await client.chat.completions.create({
+          model: chatModel,
+          messages: [{ role: "user", content: prompt }],
+          ...safeOpts,
+        });
+        raw = response.choices[0].message.content ?? "[]";
+      }
       return JSON.parse(cleanJsonResponse(raw));
     },
 
@@ -98,6 +205,7 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
       const response = await client.embeddings.create({
         model: embeddingModel,
         input: text,
+        ...extraEmbeddingOptions,
       });
       return response.data[0].embedding;
     },

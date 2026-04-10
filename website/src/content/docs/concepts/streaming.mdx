@@ -1,0 +1,180 @@
+---
+title: Streaming Output
+description: Stream LLM responses token-by-token for responsive user experiences.
+sidebar:
+  order: 5
+---
+
+## Overview
+
+Vitamem supports streaming output, delivering LLM response tokens as they are generated rather than waiting for the complete response. This enables responsive UIs with progressive text rendering.
+
+## How It Works
+
+The streaming flow follows the same lifecycle as non-streaming `chat()`:
+
+1. **Thread resolution** — Dormant/closed threads are redirected, cooling threads are reactivated
+2. **User message saved** — Your message is stored before the LLM call
+3. **Memory retrieval** — If `autoRetrieve` is enabled, memories are fetched and injected into context
+4. **Streaming begins** — The LLM generates tokens, yielded one-by-one via an `AsyncGenerator`
+5. **Completion** — After the stream ends, the full reply is saved to storage and thread timestamps are updated
+
+:::note
+Memory retrieval (step 3) always completes **before** streaming starts. This ensures the LLM has full memory context from the first token.
+:::
+
+## Usage
+
+### Basic Streaming
+
+```typescript
+const { stream, thread, memories } = await vm.chatStream({
+  threadId: "thread-123",
+  message: "What was my last A1C level?",
+});
+
+// Metadata (thread, memories) is available immediately
+console.log("Thread state:", thread.state);
+console.log("Memories used:", memories?.length ?? 0);
+
+// Consume the stream
+let fullReply = "";
+for await (const chunk of stream) {
+  process.stdout.write(chunk); // Print tokens as they arrive
+  fullReply += chunk;
+}
+// After the loop, the reply has been saved to storage automatically
+```
+
+### Convenience Method
+
+```typescript
+// Automatically resolves or creates a thread for the user
+const { stream, thread } = await vm.chatWithUserStream({
+  userId: "user-abc",
+  message: "How is my blood pressure trending?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+### With Custom System Prompt
+
+```typescript
+const { stream } = await vm.chatStream({
+  threadId: "thread-123",
+  message: "Summarize my health history",
+  systemPrompt: "You are a concise health assistant. Respond in bullet points.",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+## Server-Sent Events (SSE)
+
+When building a web API, you can convert the `AsyncGenerator` to an SSE stream:
+
+```typescript
+// Express / Next.js API route example
+export async function POST(request: Request) {
+  const { threadId, message } = await request.json();
+  const vm = getVitamem();
+
+  const { stream, thread, memories } = await vm.chatStream({ threadId, message });
+
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      // Send metadata first
+      controller.enqueue(encoder.encode(
+        `data: ${JSON.stringify({ type: "meta", thread, memories })}\n\n`
+      ));
+
+      // Stream text chunks
+      for await (const chunk of stream) {
+        controller.enqueue(encoder.encode(
+          `data: ${JSON.stringify({ type: "delta", chunk })}\n\n`
+        ));
+      }
+
+      // Signal completion
+      controller.enqueue(encoder.encode(
+        `data: ${JSON.stringify({ type: "done" })}\n\n`
+      ));
+      controller.close();
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  });
+}
+```
+
+### Browser Consumer
+
+```typescript
+const res = await fetch("/api/chat", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  },
+  body: JSON.stringify({ threadId, message }),
+});
+
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+
+  for (const line of buffer.split("\n")) {
+    if (line.startsWith("data: ")) {
+      const event = JSON.parse(line.slice(6));
+      if (event.type === "delta") {
+        appendToUI(event.chunk);
+      }
+    }
+  }
+  buffer = buffer.endsWith("\n") ? "" : buffer.split("\n").pop() || "";
+}
+```
+
+## Fallback Behavior
+
+If the LLM adapter does not implement `chatStream`, Vitamem automatically falls back to non-streaming: it calls `chat()`, waits for the full response, and yields it as a single chunk. This means `chatStream()` is always safe to call regardless of adapter support.
+
+## Storage Behavior
+
+The complete reply is saved to storage **after** the stream finishes — not incrementally. If the consumer disconnects mid-stream, the partial response is not persisted.
+
+## Custom Adapter Support
+
+To add streaming to a custom adapter, implement the optional `chatStream` method:
+
+```typescript
+const myAdapter: LLMAdapter = {
+  async chat(messages) { /* ... */ },
+  
+  async *chatStream(messages) {
+    const stream = await myLLMClient.generate({ messages, stream: true });
+    for await (const chunk of stream) {
+      yield chunk.text;
+    }
+  },
+  
+  async extractMemories(messages) { /* ... */ },
+  async embed(text) { /* ... */ },
+};
+```

@@ -39,4 +39,5 @@ export { createOllamaAdapter } from "./adapters/ollama.js";
 // Backward compatibility
 export { EphemeralAdapter as InMemoryAdapter } from "./storage/ephemeral-adapter.js";
 
+export { HEALTH_AUTO_PIN_RULES } from "./types.js";
 export type * from "./types.js";

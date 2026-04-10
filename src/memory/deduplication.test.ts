@@ -4,6 +4,7 @@ import {
   isDuplicate,
   findMostSimilar,
   deduplicateFacts,
+  classifyFact,
 } from './deduplication.js';
 
 // ── cosineSimilarity ──
@@ -217,5 +218,43 @@ describe('deduplicateFacts', () => {
 
   it('handles empty input', () => {
     expect(deduplicateFacts([], [], 0.92)).toEqual([]);
+  });
+});
+
+// ── classifyFact ──
+
+describe('classifyFact', () => {
+  it('returns skip when similarity >= deduplicationThreshold', () => {
+    const embedding = [1, 0, 0];
+    const existing = [{ embedding: [1, 0, 0] }];
+    const result = classifyFact(embedding, existing, 0.92, 0.75);
+    expect(result.action).toBe('skip');
+  });
+
+  it('returns supersede when similarity >= supersedeThreshold and < deduplicationThreshold', () => {
+    // cos(30°) ≈ 0.866, which is between 0.75 and 0.92
+    const a = [Math.cos(0), Math.sin(0)]; // [1, 0]
+    const b = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6)]; // [0.866, 0.5]
+    const result = classifyFact(a, [{ embedding: b }], 0.92, 0.75);
+    expect(result.action).toBe('supersede');
+    expect(result).toHaveProperty('existingIndex', 0);
+    expect(result).toHaveProperty('similarity');
+  });
+
+  it('returns save when similarity < supersedeThreshold', () => {
+    const embedding = [1, 0, 0];
+    const existing = [{ embedding: [0, 1, 0] }];
+    const result = classifyFact(embedding, existing, 0.92, 0.75);
+    expect(result.action).toBe('save');
+  });
+
+  it('returns save when no existing memories', () => {
+    const result = classifyFact([1, 0], [], 0.92, 0.75);
+    expect(result.action).toBe('save');
+  });
+
+  it('skips existing memories with null embeddings', () => {
+    const result = classifyFact([1, 0], [{ embedding: null }], 0.92, 0.75);
+    expect(result.action).toBe('save');
   });
 });

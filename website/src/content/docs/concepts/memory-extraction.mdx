@@ -62,20 +62,33 @@ The Anthropic adapter uses a similar prompt with additional health-specific cate
 
 The `{conversation}` placeholder is replaced with the formatted conversation history at extraction time.
 
-## Customizing the Extraction Prompt
+## Custom Extraction Prompt
 
-You can override the default extraction prompt by passing `extractionPrompt` to any adapter factory:
+You can set `extractionPrompt` directly in the top-level `VitamemConfig`. When using the `provider` shortcut, this is forwarded to the built-in adapter automatically:
 
 ```typescript
 const mem = await createVitamem({
   provider: "openai",
-  apiKey: process.env.OPENAI_API_KEY,
-  model: "gpt-4o",
+  apiKey: process.env.OPENAI_API_KEY!,
   storage: "ephemeral",
+  extractionPrompt: `You are a fitness coach assistant. Extract facts about this person's
+fitness journey from the conversation.
+
+Focus on:
+- Exercise routines and frequency
+- Personal records and progress
+- Injuries or physical limitations
+- Nutritional preferences and diet plans
+
+Conversation:
+{conversation}
+
+Return a JSON array only:
+[{ "content": "specific factual statement", "source": "confirmed" | "inferred" }]`,
 });
 ```
 
-To customize the prompt, use the adapter factory directly:
+Alternatively, you can pass `extractionPrompt` to the adapter factory directly:
 
 ```typescript
 import { createVitamem, createOpenAIAdapter } from "vitamem";
@@ -163,6 +176,60 @@ const facts = extractFactsSimple(messages);
 
 This is useful for testing but produces lower-quality memories than LLM extraction.
 
+## Auto-Pinning
+
+Critical health information can be **automatically pinned** during extraction so it always appears first in retrieval results. This ensures safety-critical facts (allergies, drug interactions, emergency contacts) are never buried by less important memories.
+
+### Configuring Auto-Pin Rules
+
+Pass `autoPinRules` in your `VitamemConfig`. Each rule is an `AutoPinRule` — either a regex pattern or a custom test function:
+
+```typescript
+import { createVitamem, HEALTH_AUTO_PIN_RULES } from "vitamem";
+import type { AutoPinRule } from "vitamem";
+
+// Use built-in health rules
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoPinRules: HEALTH_AUTO_PIN_RULES,
+});
+```
+
+### Built-in Health Auto-Pin Rules
+
+`HEALTH_AUTO_PIN_RULES` includes 6 rules that cover the most common safety-critical categories:
+
+| Pattern | Reason | Example Match |
+|---------|--------|---------------|
+| `\ballerg(y\|ic\|ies)\b` | allergy | "Allergic to penicillin" |
+| `\banaphyla(xis\|ctic)\b` | anaphylaxis-risk | "History of anaphylaxis" |
+| `\b(drug\|medication)\s*(interaction\|contraindication)\b` | drug-interaction | "Known drug interaction with warfarin" |
+| `\bdo\s*not\s*(take\|use\|prescribe)\b` | contraindication | "Do not prescribe NSAIDs" |
+| `\bemergency\s*contact\b` | emergency-contact | "Emergency contact: spouse at 555-1234" |
+| `\bblood\s*type\b` | blood-type | "Blood type A+" |
+
+### Custom Auto-Pin Rules
+
+You can define your own rules using regex patterns or test functions:
+
+```typescript
+const customRules: AutoPinRule[] = [
+  { pattern: /\bDNR\b/i, reason: "do-not-resuscitate" },
+  {
+    test: (memory) => memory.source === "confirmed" && /\bimplant\b/i.test(memory.content),
+    reason: "medical-implant",
+  },
+];
+```
+
+### Behavior Notes
+
+- Auto-pinned memories always appear **first** in retrieval results
+- Superseded memories can also be auto-pinned — pinning is **additive** and never removes existing pins
+- Pin status persists across memory updates
+
 ## What Gets Stored
 
 After extraction, each fact goes through the [deduplication pipeline](/concepts/deduplication/) before being saved. Only facts that are genuinely new (not already represented in the user's memory store) are persisted.
@@ -173,3 +240,5 @@ The final stored memory includes:
 - `embedding` -- the vector representation (e.g., 1536 dimensions for `text-embedding-3-small`)
 - `userId` -- for retrieval scoping
 - `threadId` -- for traceability
+- `pinned` -- `true` if the memory matched an auto-pin rule (see above)
+- `tags` -- string array for categorization (e.g. the auto-pin rule name)

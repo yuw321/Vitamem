@@ -89,11 +89,46 @@ export interface StorageAdapter {
 
 export interface LLMAdapter {
   chat(messages: Array<{ role: string; content: string }>): Promise<string>;
+  chatStream?(
+    messages: Array<{ role: string; content: string }>,
+  ): AsyncGenerator<string, void, unknown>;
   extractMemories(
     messages: Message[],
   ): Promise<Array<{ content: string; source: MemorySource }>>;
   embed(text: string): Promise<number[]>;
 }
+
+/**
+ * Rule for automatically pinning critical memories during extraction.
+ * Can be a regex pattern match or a custom test function.
+ */
+export type AutoPinRule =
+  | { pattern: RegExp; reason?: string }
+  | { test: (memory: { content: string; source: MemorySource; tags?: string[] }) => boolean; reason?: string };
+
+/**
+ * Classification result for a new fact against existing memories.
+ * - "skip": Exact duplicate (>= deduplicationThreshold), discard
+ * - "supersede": Same topic with updated value (>= supersedeThreshold, < deduplicationThreshold), update existing
+ * - "save": New distinct fact (< supersedeThreshold), save as new memory
+ */
+export type FactClassification =
+  | { action: "skip" }
+  | { action: "supersede"; existingIndex: number; similarity: number }
+  | { action: "save" };
+
+/**
+ * Built-in auto-pin rules for health companion use cases.
+ * Automatically pins memories containing critical safety information.
+ */
+export const HEALTH_AUTO_PIN_RULES: AutoPinRule[] = [
+  { pattern: /\ballerg(y|ic|ies)\b/i, reason: "allergy" },
+  { pattern: /\banaphyla(xis|ctic)\b/i, reason: "anaphylaxis-risk" },
+  { pattern: /\b(drug|medication)\s*(interaction|contraindication)\b/i, reason: "drug-interaction" },
+  { pattern: /\bdo\s*not\s*(take|use|prescribe)\b/i, reason: "contraindication" },
+  { pattern: /\bemergency\s*contact\b/i, reason: "emergency-contact" },
+  { pattern: /\bblood\s*type\b/i, reason: "blood-type" },
+];
 
 // ── Configuration ──
 
@@ -115,6 +150,11 @@ export interface VitamemConfig {
   supabaseUrl?: string;
   supabaseKey?: string;
 
+  // OpenAI-specific API mode and pass-through options
+  apiMode?: 'completions' | 'responses';
+  extraChatOptions?: Record<string, unknown>;
+  extraEmbeddingOptions?: Record<string, unknown>;
+
   // Behavioral settings
   preset?: PresetName;
   coolingTimeoutMs?: number; // default: 6 hours
@@ -129,6 +169,25 @@ export interface VitamemConfig {
   recencyWeight?: number; // 0-1, default: 0 (pure cosine similarity)
   recencyMaxAgeMs?: number; // normalization window, default: 90 days
   diversityWeight?: number; // 0-1, default: 0 (standard top-K)
+
+  // === Memory Extraction ===
+  /** Top-level extraction prompt override. Forwarded to the adapter when using `provider` shortcut. */
+  extractionPrompt?: string;
+
+  // === Memory Context Formatting ===
+  /** Custom formatter for auto-retrieve memory injection. Replaces the default bullet-point format. */
+  memoryContextFormatter?: (memories: MemoryMatch[], query: string) => string;
+
+  // === Deduplication & Supersede ===
+  /** Cosine similarity threshold for exact duplicate detection. Default: 0.92 */
+  deduplicationThreshold?: number;
+  /** Cosine similarity threshold for superseding (updating) existing memories. Default: 0.75.
+   * Facts with similarity >= supersedeThreshold and < deduplicationThreshold update the existing memory. */
+  supersedeThreshold?: number;
+
+  // === Auto-Pinning ===
+  /** Rules that automatically pin critical memories during extraction. Use HEALTH_AUTO_PIN_RULES for health domains. */
+  autoPinRules?: AutoPinRule[];
 }
 
 // ── Facade interface ──
@@ -162,6 +221,28 @@ export interface Vitamem {
     systemPrompt?: string;
   }): Promise<{
     reply: string;
+    thread: Thread;
+    memories?: MemoryMatch[];
+    previousThreadId?: string;
+    redirected?: boolean;
+  }>;
+  chatStream(opts: {
+    threadId: string;
+    message: string;
+    systemPrompt?: string;
+  }): Promise<{
+    stream: AsyncGenerator<string, void, unknown>;
+    thread: Thread;
+    memories?: MemoryMatch[];
+    previousThreadId?: string;
+    redirected?: boolean;
+  }>;
+  chatWithUserStream(opts: {
+    userId: string;
+    message: string;
+    systemPrompt?: string;
+  }): Promise<{
+    stream: AsyncGenerator<string, void, unknown>;
     thread: Thread;
     memories?: MemoryMatch[];
     previousThreadId?: string;

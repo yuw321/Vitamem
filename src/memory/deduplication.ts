@@ -1,4 +1,4 @@
-import { Memory, MemoryMatch } from '../types.js';
+import { Memory, MemoryMatch, FactClassification } from '../types.js';
 
 /**
  * Compute cosine similarity between two vectors.
@@ -93,4 +93,40 @@ export function deduplicateFacts(
   }
 
   return unique;
+}
+
+/**
+ * Classify a new fact against existing memories using two-tier thresholds.
+ * - >= deduplicationThreshold: exact duplicate, skip
+ * - >= supersedeThreshold and < deduplicationThreshold: same topic updated, supersede
+ * - < supersedeThreshold: new distinct fact, save
+ */
+export function classifyFact(
+  newEmbedding: number[],
+  existingMemories: Array<{ embedding: number[] | null }>,
+  deduplicationThreshold: number,
+  supersedeThreshold: number,
+): FactClassification {
+  let bestIndex = -1;
+  let bestSimilarity = -1;
+
+  for (let i = 0; i < existingMemories.length; i++) {
+    const existing = existingMemories[i];
+    if (!existing.embedding) continue;
+    const similarity = cosineSimilarity(newEmbedding, existing.embedding);
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex >= 0 && bestSimilarity >= deduplicationThreshold) {
+    return { action: "skip" };
+  }
+
+  if (bestIndex >= 0 && bestSimilarity >= supersedeThreshold) {
+    return { action: "supersede", existingIndex: bestIndex, similarity: bestSimilarity };
+  }
+
+  return { action: "save" };
 }

@@ -61,6 +61,44 @@ Provide **either** a string shortcut **or** a `StorageAdapter` instance.
 | `embeddingConcurrency` | `number` | `5` | Max concurrent embedding API calls |
 | `autoRetrieve` | `boolean` | `false` | Inject relevant memories into every `chat()` call |
 
+### Memory Intelligence
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `extractionPrompt` | `string` | — | Top-level extraction prompt override. Forwarded to the adapter when using the `provider` shortcut. Overrides the adapter's default health-focused prompt. |
+| `memoryContextFormatter` | `(memories: MemoryMatch[], query: string) => string` | — | Custom formatter for auto-retrieve memory injection. Replaces the default bullet-point format. |
+| `deduplicationThreshold` | `number` | `0.92` | Cosine similarity threshold for exact duplicate detection. Facts with similarity above this are discarded. |
+| `supersedeThreshold` | `number` | `0.75` | Cosine similarity threshold for memory supersede. Facts with similarity between this and `deduplicationThreshold` update the existing memory in-place (e.g., A1C 7.4% → 6.8%). |
+| `autoPinRules` | `AutoPinRule[]` | — | Rules that automatically pin critical memories during extraction. Use the built-in `HEALTH_AUTO_PIN_RULES` for health domains. |
+
+#### Custom Memory Context Formatter
+
+```typescript
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+  memoryContextFormatter: (memories, query) =>
+    `Known facts about this patient:\n${memories.map(m => `• ${m.content}`).join("\n")}`,
+});
+```
+
+#### Auto-Pin Rules
+
+```typescript
+import { createVitamem, HEALTH_AUTO_PIN_RULES } from "vitamem";
+
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoPinRules: HEALTH_AUTO_PIN_RULES,
+});
+// "Allergic to penicillin" → automatically pinned
+// "Blood type A+" → automatically pinned
+```
+
 ## Usage Examples
 
 ```typescript
@@ -137,9 +175,79 @@ const { reply, thread, memories } = await mem.chat({
 | `message` | `string` | The user's message |
 | `systemPrompt` | `string?` | Optional system prompt prepended to context |
 
-**Returns:** `{ reply: string, thread: Thread, memories?: MemoryMatch[] }`
+**Returns:** `{ reply: string, thread: Thread, memories?: MemoryMatch[], previousThreadId?: string, redirected?: boolean }`
 
-When `autoRetrieve` is enabled, `memories` contains the memories that were injected into context.
+When `autoRetrieve` is enabled, `memories` contains the memories that were injected into context. If the thread was dormant or closed, a new thread is created and `redirected` is `true` with `previousThreadId` set.
+
+---
+
+### `chatStream(opts)`
+
+Streaming variant of `chat()`. Returns an `AsyncGenerator` that yields response tokens as they are generated. The full reply is saved to storage after the stream completes.
+
+```typescript
+const { stream, thread, memories } = await mem.chatStream({
+  threadId: thread.id,
+  message: "What medications am I taking?",
+  systemPrompt: "You are a health companion.", // optional
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `threadId` | `string` | The thread to send the message in |
+| `message` | `string` | The user's message |
+| `systemPrompt` | `string?` | Optional system prompt prepended to context |
+
+**Returns:** `Promise<{ stream, thread, memories?, previousThreadId?, redirected? }>`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stream` | `AsyncGenerator<string>` | Yields response tokens one-by-one |
+| `thread` | `Thread` | The resolved thread (may be a new thread if redirected) |
+| `memories` | `MemoryMatch[]?` | Memories injected into context (when `autoRetrieve` is enabled) |
+| `previousThreadId` | `string?` | Original thread ID if redirected from dormant/closed |
+| `redirected` | `boolean?` | `true` if a new thread was created due to dormant/closed state |
+
+:::note
+If the LLM adapter does not implement `chatStream`, Vitamem falls back to non-streaming `chat()` and yields the full reply as a single chunk. `chatStream()` is always safe to call.
+:::
+
+---
+
+### `chatWithUser(opts)`
+
+Convenience method that resolves or creates a thread for the user, then calls `chat()`.
+
+```typescript
+const { reply, thread } = await mem.chatWithUser({
+  userId: "user-123",
+  message: "How has my blood pressure been?",
+});
+```
+
+---
+
+### `chatWithUserStream(opts)`
+
+Streaming variant of `chatWithUser()`. Resolves or creates a thread, then calls `chatStream()`.
+
+```typescript
+const { stream, thread } = await mem.chatWithUserStream({
+  userId: "user-123",
+  message: "How has my blood pressure been?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+**Returns:** Same shape as `chatStream()`.
 
 ---
 

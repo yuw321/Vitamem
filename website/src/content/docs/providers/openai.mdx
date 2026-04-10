@@ -56,25 +56,73 @@ const mem = await createVitamem({
 | `chatModel` | `string` | `"gpt-5.4-mini"` | Model used for chat completions and memory extraction. |
 | `embeddingModel` | `string` | `"text-embedding-3-small"` | Model used for text embeddings. |
 | `baseUrl` | `string` | `undefined` | Override the API base URL (see below). |
+| `apiMode` | `"completions"` \| `"responses"` | `"completions"` | Which OpenAI API shape to use (see [API Mode](#api-mode)). |
+| `extraChatOptions` | `object` | `undefined` | Provider-specific options spread into every chat/extraction call (see [Pass-through Options](#pass-through-options)). |
+| `extraEmbeddingOptions` | `object` | `undefined` | Provider-specific options spread into every embedding call. |
 | `extractionPrompt` | `string` | Built-in prompt | Custom prompt for memory extraction. Must include a `{conversation}` placeholder. |
+
+## API Mode
+
+Vitamem supports two OpenAI API modes:
+
+- **`completions`** (default) — Uses `/v1/chat/completions`. Compatible with OpenAI, DashScope, Azure OpenAI, Groq, Together AI, and other OpenAI-compatible providers.
+- **`responses`** — Uses OpenAI's newer Responses API (`/v1/responses`) with extended features.
+
+```typescript
+const adapter = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  apiMode: 'responses',  // Use Responses API
+});
+```
+
+Or via environment variable:
+
+```env
+OPENAI_API_MODE=responses
+```
+
+:::note
+Most OpenAI-compatible providers (DashScope, Azure, Groq, LM Studio, etc.) only support the `completions` mode. Use `responses` only when targeting the official OpenAI API and you need Responses API features.
+:::
+
+## Pass-through Options
+
+Pass any provider-specific options directly to the underlying SDK call using `extraChatOptions` and `extraEmbeddingOptions`. These are spread into the SDK request, so you can use any option your provider supports without waiting for explicit Vitamem support.
+
+```typescript
+const adapter = createOpenAIAdapter({
+  apiKey: process.env.OPENAI_API_KEY!,
+  extraChatOptions: {
+    temperature: 0.7,
+    max_tokens: 1024,
+  },
+  extraEmbeddingOptions: {
+    dimensions: 512,
+  },
+});
+```
+
+Or via environment variables (JSON format):
+
+```env
+OPENAI_EXTRA_CHAT_OPTIONS={"temperature": 0.7, "max_tokens": 1024}
+OPENAI_EXTRA_EMBEDDING_OPTIONS={"dimensions": 512}
+```
+
+:::tip
+Pass-through options are useful for provider-specific features like DashScope's `enable_search` or OpenAI's `reasoning` parameter — anything the SDK accepts but Vitamem does not explicitly model.
+:::
 
 ## Choosing Models
 
 ### Chat Models
 
-Any model available through the OpenAI chat completions API works. Common choices:
-
-| Model | Best For |
-| --- | --- |
-| `gpt-5.4-mini` | Default. Fast, cost-effective, good extraction quality. |
-| `gpt-4o` | Higher accuracy on nuanced health conversations. |
-| `gpt-4o-mini` | Balance of speed and capability. |
-| `o3-mini` | Reasoning-focused tasks. |
+Any model available through the OpenAI chat completions API works. 
 
 ```typescript
 const llm = createOpenAIAdapter({
   apiKey: process.env.OPENAI_API_KEY!,
-  chatModel: "gpt-4o",
+  chatModel: "gpt-5.4-mini",
 });
 ```
 
@@ -97,6 +145,54 @@ Changing the embedding model after memories have been stored will produce
 
 The `baseUrl` option lets you point the adapter at any API that implements the OpenAI chat completions and embeddings endpoints. This is useful for proxies, self-hosted models, or enterprise gateways.
 
+### DashScope (Alibaba Cloud)
+
+DashScope provides an OpenAI-compatible endpoint that supports both chat completions (Qwen models) and embeddings.
+
+```typescript
+const llm = createOpenAIAdapter({
+  apiKey: process.env.DASHSCOPE_API_KEY!,
+  chatModel: "qwen3.5-flash",
+  embeddingModel: "text-embedding-v4",
+  baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+});
+```
+
+Or configure entirely via environment variables:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-dashscope-key
+OPENAI_CHAT_MODEL=qwen3.5-flash
+OPENAI_EMBEDDING_MODEL=text-embedding-v4
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_API_MODE=completions
+```
+
+:::tip[DashScope `enable_thinking`]
+With streaming enabled, DashScope's `enable_thinking` option works via `extraChatOptions`:
+
+```typescript
+const adapter = createOpenAIAdapter({
+  apiKey: process.env.DASHSCOPE_API_KEY!,
+  chatModel: 'qwen3.5-flash',
+  baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  extraChatOptions: { enable_thinking: true },
+});
+// Use chatStream() — enable_thinking requires streaming
+```
+
+**Important:** `enable_thinking` only works with streaming (`chatStream`). Non-streaming `chat()` will error.
+:::
+
+**Recommended DashScope models:**
+
+| Purpose | Model | Notes |
+| --- | --- | --- |
+| Chat / Extraction | `qwen3.5-flash` | Fast, cost-effective. |
+| Chat / Extraction | `qwen-plus` | Higher accuracy. |
+| Embeddings | `text-embedding-v4` | Use via the compatible-mode URL. |
+
 ### Azure OpenAI
 
 ```typescript
@@ -106,6 +202,20 @@ const llm = createOpenAIAdapter({
   chatModel: "gpt-4o",
 });
 ```
+
+### Groq
+
+```typescript
+const llm = createOpenAIAdapter({
+  apiKey: process.env.GROQ_API_KEY!,
+  chatModel: "llama-3.3-70b-versatile",
+  baseUrl: "https://api.groq.com/openai/v1",
+});
+```
+
+:::note
+Groq does not provide an embedding endpoint. Pair it with a separate embedding provider using a [custom adapter](/providers/custom-llm-adapter/).
+:::
 
 ### LM Studio
 
@@ -132,6 +242,29 @@ const llm = createOpenAIAdapter({
 For local models via Ollama, use the dedicated [Ollama adapter](/providers/ollama/)
   instead. It provides sensible defaults and zero-config setup.
 :::
+
+## Streaming
+
+The OpenAI adapter supports streaming in both `completions` and `responses` API modes. Use `chatStream()` or `chatWithUserStream()` on the Vitamem instance to receive tokens as they are generated:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+
+const { stream } = await mem.chatStream({
+  threadId: thread.id,
+  message: "What should I know about my medications?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+See [Streaming Output](/concepts/streaming/) for the full guide, including SSE integration and fallback behavior.
 
 ## Custom Extraction Prompt
 

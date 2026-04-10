@@ -196,6 +196,23 @@ createOpenAIAdapter({
 
 This works because Ollama implements the OpenAI-compatible chat completions and embeddings endpoints.
 
+## Streaming
+
+The Ollama adapter inherits streaming support from the OpenAI adapter. Use `chatStream()` or `chatWithUserStream()` on the Vitamem instance:
+
+```typescript
+const { stream } = await mem.chatStream({
+  threadId: thread.id,
+  message: "How is my sleep tracking looking?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+See [Streaming Output](/concepts/streaming/) for the full guide.
+
 ## Troubleshooting
 
 **"Connection refused" errors** -- Make sure Ollama is running. Start it with `ollama serve` or check that the Ollama desktop app is open.

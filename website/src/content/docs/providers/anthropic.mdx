@@ -156,6 +156,25 @@ const llm = createAnthropicAdapter({
 
 This only affects the Anthropic chat endpoint. Embedding requests always go directly to the OpenAI API.
 
+## Streaming
+
+The Anthropic adapter supports streaming via the Claude Messages API. Use `chatStream()` or `chatWithUserStream()` on the Vitamem instance:
+
+```typescript
+const { stream } = await mem.chatStream({
+  threadId: thread.id,
+  message: "How has my blood pressure been trending?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+System prompt handling works identically in streaming mode — system messages are separated and passed as the top-level `system` parameter automatically.
+
+See [Streaming Output](/concepts/streaming/) for the full guide.
+
 ## Peer Dependencies
 
 The Anthropic adapter requires two peer dependencies:

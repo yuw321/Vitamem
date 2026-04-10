@@ -60,19 +60,11 @@ const mem = await createVitamem({
 
 ### Chat Models
 
-Any model available through the OpenAI chat completions API works. Common choices:
-
-| Model | Best For |
-| --- | --- |
-| `gpt-5.4-mini` | Default. Fast, cost-effective, good extraction quality. |
-| `gpt-4o` | Higher accuracy on nuanced health conversations. |
-| `gpt-4o-mini` | Balance of speed and capability. |
-| `o3-mini` | Reasoning-focused tasks. |
-
+Any model available through the OpenAI chat completions API works. 
 ```typescript
 const llm = createOpenAIAdapter({
   apiKey: process.env.OPENAI_API_KEY!,
-  chatModel: "gpt-4o",
+  chatModel: "gpt-5.4-mini",
 });
 ```
 

@@ -1,10 +1,11 @@
-import { Thread, Message, LLMAdapter, StorageAdapter } from "../types.js";
+import { Thread, Message, LLMAdapter, StorageAdapter, AutoPinRule, MemorySource } from "../types.js";
 import { extractMemories } from "../memory/extraction.js";
-import { deduplicateFacts } from "../memory/deduplication.js";
+import { classifyFact } from "../memory/deduplication.js";
 
 export interface EmbeddingPipelineResult {
   memoriesSaved: number;
   memoriesDeduped: number;
+  memoriesSuperseded: number;
   totalExtracted: number;
 }
 
@@ -47,65 +48,131 @@ async function mapWithConcurrency<T, R>(
  * transitions to dormant state. Embeddings are computed ONCE here,
  * not at search time.
  */
+/**
+ * Check if a memory should be automatically pinned based on configured rules.
+ */
+function shouldAutoPin(
+  content: string,
+  source: MemorySource,
+  tags: string[] | undefined,
+  rules: AutoPinRule[],
+): boolean {
+  for (const rule of rules) {
+    if ("pattern" in rule) {
+      if (rule.pattern.test(content)) return true;
+    } else {
+      if (rule.test({ content, source, tags })) return true;
+    }
+  }
+  return false;
+}
+
 export async function runEmbeddingPipeline(
   thread: Thread,
   messages: Message[],
   llm: LLMAdapter,
   storage: StorageAdapter,
   deduplicationThreshold = 0.92,
-  concurrency = 5,
+  supersedeThreshold = 0.75,
+  embeddingConcurrency = 5,
+  autoPinRules: AutoPinRule[] = [],
 ): Promise<EmbeddingPipelineResult> {
   // Step 1: Extract facts
   const extractedFacts = await extractMemories(messages, llm);
   const totalExtracted = extractedFacts.length;
 
   if (totalExtracted === 0) {
-    return { memoriesSaved: 0, memoriesDeduped: 0, totalExtracted: 0 };
+    return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted: 0 };
   }
 
   // Step 2: Embed each fact (with concurrency limit)
   const embeddings = await mapWithConcurrency(
     extractedFacts,
     (fact) => llm.embed(fact.content),
-    concurrency,
+    embeddingConcurrency,
   );
 
   const factsWithEmbeddings = extractedFacts.map((fact, i) => ({
     content: fact.content,
     source: fact.source,
+    tags: fact.tags,
     embedding: embeddings[i],
   }));
 
   // Step 3: Get existing memories for deduplication
   const existingMemories = await storage.getMemories(thread.userId);
 
-  // Step 4: Deduplicate
-  const uniqueFacts = deduplicateFacts(
-    factsWithEmbeddings,
-    existingMemories,
-    deduplicationThreshold,
-  );
-  const memoriesDeduped = totalExtracted - uniqueFacts.length;
+  // Step 4: Classify and process each fact
+  let memoriesSaved = 0;
+  let memoriesDeduped = 0;
+  let memoriesSuperseded = 0;
 
-  // Step 5: Save unique memories
-  const savePromises = uniqueFacts.map((fact) => {
-    const factWithSource = factsWithEmbeddings.find(
-      (f) => f.content === fact.content,
+  // Track accepted embeddings to prevent intra-batch duplicates
+  const acceptedEmbeddings: Array<{ embedding: number[] }> = [
+    ...existingMemories.filter(m => m.embedding !== null) as Array<{ embedding: number[] }>
+  ];
+
+  for (const fact of factsWithEmbeddings) {
+    const classification = classifyFact(
+      fact.embedding,
+      [...existingMemories, ...acceptedEmbeddings.slice(existingMemories.filter(m => m.embedding !== null).length)],
+      deduplicationThreshold,
+      supersedeThreshold,
     );
-    return storage.saveMemory({
-      userId: thread.userId,
-      threadId: thread.id,
-      content: fact.content,
-      source: factWithSource?.source ?? "inferred",
-      embedding: fact.embedding,
-    });
-  });
 
-  await Promise.all(savePromises);
+    switch (classification.action) {
+      case "skip":
+        memoriesDeduped++;
+        break;
 
-  return {
-    memoriesSaved: uniqueFacts.length,
-    memoriesDeduped,
-    totalExtracted,
-  };
+      case "supersede": {
+        // Update the existing memory with new content and embedding
+        const existing = existingMemories[classification.existingIndex];
+        if (storage.updateMemory && existing?.id) {
+          const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
+          await storage.updateMemory(existing.id, {
+            content: fact.content,
+            embedding: fact.embedding,
+            source: fact.source ?? "inferred",
+            tags: fact.tags,
+            ...(pinned && { pinned: true }),
+          });
+          memoriesSuperseded++;
+        } else {
+          // Fallback: if updateMemory not available, save as new
+          const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
+          await storage.saveMemory({
+            userId: thread.userId,
+            threadId: thread.id,
+            content: fact.content,
+            source: fact.source ?? "inferred",
+            embedding: fact.embedding,
+            tags: fact.tags,
+            pinned,
+          });
+          memoriesSaved++;
+        }
+        acceptedEmbeddings.push({ embedding: fact.embedding });
+        break;
+      }
+
+      case "save": {
+        const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
+        await storage.saveMemory({
+          userId: thread.userId,
+          threadId: thread.id,
+          content: fact.content,
+          source: fact.source ?? "inferred",
+          embedding: fact.embedding,
+          tags: fact.tags,
+          pinned,
+        });
+        memoriesSaved++;
+        acceptedEmbeddings.push({ embedding: fact.embedding });
+        break;
+      }
+    }
+  }
+
+  return { memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted };
 }

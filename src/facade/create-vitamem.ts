@@ -49,6 +49,10 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
         chatModel: config.model,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
+        apiMode: config.apiMode,
+        extraChatOptions: config.extraChatOptions,
+        extraEmbeddingOptions: config.extraEmbeddingOptions,
+        extractionPrompt: config.extractionPrompt,
       });
     }
     case "anthropic": {
@@ -61,6 +65,7 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
         embeddingApiKey: config.apiKey!,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
+        extractionPrompt: config.extractionPrompt,
       });
     }
     case "ollama": {
@@ -69,6 +74,7 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
         chatModel: config.model,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
+        extractionPrompt: config.extractionPrompt,
       });
     }
     default:
@@ -133,12 +139,16 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
     config.closedTimeoutMs ?? DEFAULT_CLOSED_TIMEOUT_MS;
   const embeddingConcurrency =
     config.embeddingConcurrency ?? DEFAULT_EMBEDDING_CONCURRENCY;
+  const deduplicationThreshold = config.deduplicationThreshold ?? 0.92;
+  const supersedeThreshold = config.supersedeThreshold ?? 0.75;
+  const autoPinRules = config.autoPinRules ?? [];
   const autoRetrieve = config.autoRetrieve ?? false;
   const minScore = config.minScore ?? 0;
   const recencyWeight = config.recencyWeight ?? 0;
   const recencyMaxAgeMs = config.recencyMaxAgeMs ?? 90 * 24 * 60 * 60 * 1000;
   const diversityWeight = config.diversityWeight ?? 0;
   const onRetrieve = config.onRetrieve;
+  const memoryContextFormatter = config.memoryContextFormatter;
 
   /**
    * Full retrieval pipeline:
@@ -217,7 +227,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
     return results;
   }
 
-  return {
+  const api: Vitamem = {
     async createThread({ userId }) {
       return storage.createThread(userId);
     },
@@ -229,7 +239,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       // Dormant/closed thread guard: auto-create new thread and redirect
       if (thread.state === "dormant" || thread.state === "closed") {
         const newThread = await storage.createThread(thread.userId);
-        const result = await this.chat({ threadId: newThread.id, message, systemPrompt });
+        const result = await api.chat({ threadId: newThread.id, message, systemPrompt });
         return { ...result, thread: newThread, previousThreadId: thread.id, redirected: true };
       }
 
@@ -259,12 +269,12 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
           message,
         );
         if (retrievedMemories.length > 0) {
-          const memoryContext = retrievedMemories
-            .map((m) => `- ${m.content} (${m.source})`)
-            .join("\n");
+          const defaultFormatter = (memories: MemoryMatch[]) =>
+            `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
+          const formatter = memoryContextFormatter ?? defaultFormatter;
           chatMessages.push({
             role: "system",
-            content: `Relevant context from previous sessions:\n${memoryContext}`,
+            content: formatter(retrievedMemories, message),
           });
         }
       }
@@ -345,8 +355,10 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         messages,
         llm,
         storage,
-        0.92,
+        deduplicationThreshold,
+        supersedeThreshold,
         embeddingConcurrency,
+        autoPinRules,
       );
     },
 
@@ -395,8 +407,10 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
             messages,
             llm,
             storage,
-            0.92,
+            deduplicationThreshold,
+            supersedeThreshold,
             embeddingConcurrency,
+            autoPinRules,
           );
         }
       }
@@ -447,9 +461,104 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       return storage.createThread(userId);
     },
 
+    async chatStream({ threadId, message, systemPrompt }) {
+      const thread = await storage.getThread(threadId);
+      if (!thread) throw new Error(`Thread not found: ${threadId}`);
+
+      // Dormant/closed thread guard: auto-create new thread and redirect
+      if (thread.state === "dormant" || thread.state === "closed") {
+        const newThread = await storage.createThread(thread.userId);
+        const result = await api.chatStream({ threadId: newThread.id, message, systemPrompt });
+        return { ...result, thread: newThread, previousThreadId: thread.id, redirected: true };
+      }
+
+      // Reactivate if cooling
+      let current = thread;
+      if (current.state === "cooling") {
+        current = reactivate(current);
+        await storage.updateThread(current);
+      }
+
+      // Add user message
+      await storage.addMessage(threadId, "user", message);
+
+      // Get all messages for context
+      const messages = await storage.getMessages(threadId);
+      const chatMessages: Array<{ role: string; content: string }> = [];
+
+      // Auto-retrieve: embed the user message, search memories, inject as system message
+      let retrievedMemories: MemoryMatch[] | undefined;
+      if (autoRetrieve) {
+        const queryEmbedding = await llm.embed(message);
+        retrievedMemories = await runRetrievalPipeline(
+          current.userId,
+          queryEmbedding,
+          10,
+          undefined,
+          message,
+        );
+        if (retrievedMemories.length > 0) {
+          const defaultFormatter = (memories: MemoryMatch[]) =>
+            `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
+          const formatter = memoryContextFormatter ?? defaultFormatter;
+          chatMessages.push({
+            role: "system",
+            content: formatter(retrievedMemories, message),
+          });
+        }
+      }
+
+      // Inject custom system prompt if provided
+      if (systemPrompt) {
+        chatMessages.push({ role: "system", content: systemPrompt });
+      }
+
+      // Add conversation messages
+      chatMessages.push(
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+      );
+
+      const onComplete = async (fullText: string) => {
+        await storage.addMessage(threadId, "assistant", fullText);
+        current = {
+          ...current,
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+        };
+        await storage.updateThread(current);
+      };
+
+      // Fallback: if adapter doesn't support streaming
+      if (!llm.chatStream) {
+        const reply = await llm.chat(chatMessages);
+        await onComplete(reply);
+        const stream = (async function* () { yield reply; })();
+        return { stream, thread: current, memories: retrievedMemories };
+      }
+
+      const gen = llm.chatStream(chatMessages);
+      const stream = (async function* () {
+        let full = "";
+        for await (const chunk of gen) {
+          full += chunk;
+          yield chunk;
+        }
+        await onComplete(full);
+      })();
+
+      return { stream, thread: current, memories: retrievedMemories };
+    },
+
     async chatWithUser({ userId, message, systemPrompt }) {
-      const thread = await this.getOrCreateThread(userId);
-      return this.chat({ threadId: thread.id, message, systemPrompt });
+      const thread = await api.getOrCreateThread(userId);
+      return api.chat({ threadId: thread.id, message, systemPrompt });
+    },
+
+    async chatWithUserStream({ userId, message, systemPrompt }) {
+      const thread = await api.getOrCreateThread(userId);
+      return api.chatStream({ threadId: thread.id, message, systemPrompt });
     },
   };
+
+  return api;
 }

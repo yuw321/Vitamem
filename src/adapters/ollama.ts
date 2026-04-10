@@ -6,6 +6,10 @@ export interface OllamaAdapterOptions {
   embeddingModel?: string;
   baseUrl?: string;
   extractionPrompt?: string;
+  /** Pass-through options for chat/completion calls. */
+  extraChatOptions?: Record<string, unknown>;
+  /** Pass-through options for embedding calls. */
+  extraEmbeddingOptions?: Record<string, unknown>;
 }
 
 const DEFAULT_CHAT_MODEL = "llama3.2";
@@ -33,5 +37,7 @@ export function createOllamaAdapter(opts?: OllamaAdapterOptions): LLMAdapter {
     embeddingModel: opts?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL,
     baseUrl: opts?.baseUrl ?? DEFAULT_BASE_URL,
     extractionPrompt: opts?.extractionPrompt,
+    extraChatOptions: opts?.extraChatOptions,
+    extraEmbeddingOptions: opts?.extraEmbeddingOptions,
   });
 }

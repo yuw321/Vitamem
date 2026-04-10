@@ -9,6 +9,10 @@ sidebar:
 
 Vitamem communicates with language models through the `LLMAdapter` interface. The built-in adapters (OpenAI, Anthropic, Ollama) cover common providers, but you can implement the interface yourself to use any LLM or embedding service.
 
+:::tip[Try pass-through options first]
+Before building a custom adapter, check if the built-in [OpenAI adapter](/providers/openai/) already supports your provider. Many services (DashScope, Azure, Groq, Together AI) are OpenAI-compatible and work with `createOpenAIAdapter` by setting a `baseUrl`. You can also pass provider-specific options via [`extraChatOptions` and `extraEmbeddingOptions`](/providers/openai/#pass-through-options) without writing any adapter code.
+:::
+
 ## The LLMAdapter Interface
 
 The interface has three methods:

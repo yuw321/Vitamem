@@ -181,6 +181,8 @@ export class SupabaseAdapter implements StorageAdapter {
         content: full.content,
         source: full.source,
         embedding: full.embedding,
+        pinned: full.pinned ?? false,
+        tags: full.tags ?? [],
         created_at: full.createdAt.toISOString(),
       })
       .select()

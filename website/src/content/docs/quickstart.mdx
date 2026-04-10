@@ -113,6 +113,23 @@ console.log(memories);
 // [{ content: "Takes metformin daily", source: "confirmed", score: 0.95 }]
 ```
 
+## Step 6: Stream responses
+
+For real-time UIs, use `chatStream()` to receive tokens as they are generated:
+
+```typescript
+const { stream, thread: streamThread } = await mem.chatStream({
+  threadId: thread.id,
+  message: "What medications am I taking?",
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+See [Streaming Output](/concepts/streaming/) for SSE integration and more patterns.
+
 ## Production: Use Supabase
 
 For production, swap `"ephemeral"` with `"supabase"`:

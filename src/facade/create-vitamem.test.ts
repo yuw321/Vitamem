@@ -1112,6 +1112,195 @@ describe("createVitamem.filterTags", () => {
   });
 });
 
+// ── chatStream ──
+
+// Helper to create a mock async generator
+async function* mockStreamGen(chunks: string[]): AsyncGenerator<string, void, unknown> {
+  for (const chunk of chunks) {
+    yield chunk;
+  }
+}
+
+describe("createVitamem.chatStream", () => {
+  it("yields chunks and saves complete message", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      chatStream: (_messages) => mockStreamGen(["Hello", " ", "world"]),
+    });
+    const mem = await createVitamem({ llm, storage });
+
+    const thread = await mem.createThread({ userId: "u_stream" });
+    const { stream, thread: updated } = await mem.chatStream({
+      threadId: thread.id,
+      message: "test",
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["Hello", " ", "world"]);
+
+    // Verify the complete message was saved to storage
+    const messages = await storage.getMessages(thread.id);
+    expect(messages).toHaveLength(2); // user + assistant
+    expect(messages[0].role).toBe("user");
+    expect(messages[0].content).toBe("test");
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[1].content).toBe("Hello world");
+  });
+
+  it("falls back to non-streaming when adapter lacks chatStream", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter();
+    // Ensure chatStream is not present
+    delete (llm as any).chatStream;
+    const mem = await createVitamem({ llm, storage });
+
+    const thread = await mem.createThread({ userId: "u_fallback" });
+    const { stream } = await mem.chatStream({
+      threadId: thread.id,
+      message: "test",
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    // Should yield the full response as a single chunk
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toContain("Reply to: test");
+
+    // Verify message saved to storage
+    const messages = await storage.getMessages(thread.id);
+    expect(messages).toHaveLength(2);
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[1].content).toContain("Reply to: test");
+  });
+
+  it("includes memories when autoRetrieve is enabled", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      chatStream: (_messages) => mockStreamGen(["response"]),
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage, autoRetrieve: true });
+
+    // Seed a memory
+    await storage.saveMemory({
+      userId: "u_stream_mem",
+      threadId: "t-1",
+      content: "Has diabetes",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+
+    const thread = await mem.createThread({ userId: "u_stream_mem" });
+    const { stream, memories } = await mem.chatStream({
+      threadId: thread.id,
+      message: "health info",
+    });
+
+    // Consume the stream
+    for await (const _ of stream) { /* drain */ }
+
+    expect(memories).toBeDefined();
+    expect(memories!.length).toBeGreaterThan(0);
+    expect(memories![0].content).toBe("Has diabetes");
+  });
+
+  it("throws for non-existent thread", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    await expect(
+      mem.chatStream({ threadId: "nonexistent", message: "Hi" }),
+    ).rejects.toThrow("Thread not found");
+  });
+});
+
+// ── chatWithUserStream ──
+
+describe("createVitamem.chatWithUserStream", () => {
+  it("resolves thread and streams", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      chatStream: (_messages) => mockStreamGen(["Hi", " there"]),
+    });
+    const mem = await createVitamem({ llm, storage });
+
+    const { stream, thread } = await mem.chatWithUserStream({
+      userId: "u_cws",
+      message: "test",
+    });
+
+    expect(thread.userId).toBe("u_cws");
+    expect(thread.state).toBe("active");
+
+    const chunks: string[] = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["Hi", " there"]);
+
+    // Verify message was saved
+    const messages = await storage.getMessages(thread.id);
+    expect(messages).toHaveLength(2);
+    expect(messages[1].content).toBe("Hi there");
+  });
+});
+
+// ── Tier 3: MMR diversity (integration) ──
+
+describe("createVitamem.memoryContextFormatter", () => {
+  it("uses custom memoryContextFormatter when provided", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+
+    const customFormatter = vi.fn().mockImplementation(
+      (memories: MemoryMatch[], query: string) =>
+        `CUSTOM: ${memories.map((m) => m.content).join(", ")} | Q: ${query}`,
+    );
+
+    const mem = await createVitamem({
+      llm,
+      storage,
+      autoRetrieve: true,
+      memoryContextFormatter: customFormatter,
+    });
+
+    // Seed a memory
+    await storage.saveMemory({
+      userId: "u_fmt",
+      threadId: "t-1",
+      content: "Takes metformin",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+
+    const thread = await mem.createThread({ userId: "u_fmt" });
+    await mem.chat({ threadId: thread.id, message: "My medications?" });
+
+    // Verify custom formatter was called
+    expect(customFormatter).toHaveBeenCalled();
+
+    // Verify the formatted string was injected into chat messages
+    const chatCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const systemMsg = chatCall.find(
+      (m: { role: string; content: string }) =>
+        m.role === "system" && m.content.startsWith("CUSTOM:"),
+    );
+    expect(systemMsg).toBeTruthy();
+    expect(systemMsg.content).toContain("Takes metformin");
+    expect(systemMsg.content).toContain("Q: My medications?");
+  });
+});
+
 // ── Tier 3: MMR diversity (integration) ──
 
 describe("createVitamem.diversityWeight", () => {

@@ -112,6 +112,37 @@ export function createAnthropicAdapter(
       return response.content[0].text;
     },
 
+    async *chatStream(
+      messages: Array<{ role: string; content: string }>,
+    ): AsyncGenerator<string, void, unknown> {
+      const client = await getAnthropicClient();
+
+      const systemMessages = messages.filter((m) => m.role === "system");
+      const conversationMessages = messages.filter((m) => m.role !== "system");
+
+      const system =
+        systemMessages.length > 0
+          ? systemMessages.map((m) => m.content).join("\n")
+          : undefined;
+
+      const stream = await client.messages.create({
+        model: chatModel,
+        max_tokens: 1024,
+        ...(system && { system }),
+        messages: conversationMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        stream: true,
+      });
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          yield event.delta.text;
+        }
+      }
+    },
+
     async extractMemories(
       messages: Message[],
     ): Promise<Array<{ content: string; source: MemorySource }>> {

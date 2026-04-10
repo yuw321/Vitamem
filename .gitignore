@@ -25,6 +25,11 @@ Thumbs.db
 __pycache__/
 *.pyc
 
+# Demo
+demo/.env
+demo/.next/
+demo/node_modules/
+
 # Logs
 *.log
 npm-debug.log*

@@ -33,7 +33,8 @@ export default defineConfig({
 						{ label: 'Thread Lifecycle', slug: 'concepts/thread-lifecycle' },
 						{ label: 'Memory Extraction', slug: 'concepts/memory-extraction' },
 						{ label: 'Deduplication', slug: 'concepts/deduplication' },
-						{ label: 'Auto-Retrieve', slug: 'concepts/auto-retrieve' },
+							{ label: 'Auto-Retrieve', slug: 'concepts/auto-retrieve' },
+							{ label: 'Streaming Output', slug: 'concepts/streaming' },
 					],
 				},
 				{

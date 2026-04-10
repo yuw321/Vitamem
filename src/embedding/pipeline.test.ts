@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runEmbeddingPipeline, EmbeddingPipelineResult } from './pipeline.js';
-import { Thread, Message, Memory, LLMAdapter, StorageAdapter } from '../types.js';
+import { Thread, Message, Memory, LLMAdapter, StorageAdapter, HEALTH_AUTO_PIN_RULES } from '../types.js';
 
 // ── Helpers ──
 
@@ -77,6 +77,7 @@ describe('runEmbeddingPipeline', () => {
     expect(result).toEqual({
       memoriesSaved: 0,
       memoriesDeduped: 0,
+      memoriesSuperseded: 0,
       totalExtracted: 0,
     });
     expect(llm.extractMemories).not.toHaveBeenCalled();
@@ -264,5 +265,88 @@ describe('runEmbeddingPipeline', () => {
     expect(llm.embed).toHaveBeenCalledWith('Fact one');
     expect(llm.embed).toHaveBeenCalledWith('Fact two');
     expect(llm.embed).toHaveBeenCalledWith('Fact three');
+  });
+
+  it('supersedes existing memory when in supersede band', async () => {
+    const messages = [makeMessage()];
+
+    // Existing memory embedding
+    const existingEmb = [1, 0, 0];
+    // New embedding: cos(30°) ≈ 0.866, between 0.75 and 0.92
+    const newEmb = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), 0];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'A1C is 6.8%', source: 'confirmed' },
+      ]),
+      embed: vi.fn().mockResolvedValue(newEmb),
+    });
+
+    const updateMemory = vi.fn().mockResolvedValue(undefined);
+    const storage = makeStorageAdapter({
+      getMemories: vi.fn().mockResolvedValue([
+        {
+          id: 'mem-old',
+          userId: 'user-1',
+          threadId: 'old-thread',
+          content: 'A1C is 7.4%',
+          source: 'confirmed',
+          embedding: existingEmb,
+          createdAt: new Date(),
+        },
+      ]),
+      updateMemory,
+    });
+
+    const result = await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75,
+    );
+
+    expect(result.memoriesSuperseded).toBe(1);
+    expect(result.memoriesSaved).toBe(0);
+    expect(updateMemory).toHaveBeenCalledWith('mem-old', expect.objectContaining({
+      content: 'A1C is 6.8%',
+    }));
+    expect(storage.saveMemory).not.toHaveBeenCalled();
+  });
+
+  it('auto-pins allergy memory with HEALTH_AUTO_PIN_RULES', async () => {
+    const messages = [makeMessage()];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'Allergic to penicillin', source: 'confirmed' },
+      ]),
+    });
+
+    const storage = makeStorageAdapter();
+
+    await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75, 5, HEALTH_AUTO_PIN_RULES,
+    );
+
+    expect(storage.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ pinned: true }),
+    );
+  });
+
+  it('does NOT auto-pin non-critical memory', async () => {
+    const messages = [makeMessage()];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'Walks 30 minutes daily', source: 'inferred' },
+      ]),
+    });
+
+    const storage = makeStorageAdapter();
+
+    await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75, 5, HEALTH_AUTO_PIN_RULES,
+    );
+
+    expect(storage.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ pinned: false }),
+    );
   });
 });

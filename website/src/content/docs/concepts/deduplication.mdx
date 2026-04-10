@@ -56,6 +56,42 @@ Extraction produces: **"A1C was 7.2"**
 
 Cosine similarity against all existing memories < 0.92 → **new fact, saved**.
 
+## Memory Supersede
+
+Starting with Vitamem's two-tier threshold system, facts are not simply "duplicate or new" — there is a middle ground for **updated information**.
+
+### Two-Tier Threshold System
+
+| Similarity Range | Classification | Action |
+|-----------------|----------------|--------|
+| `>= 0.92` (deduplicationThreshold) | Exact duplicate | New fact is **discarded** |
+| `>= 0.75` and `< 0.92` (supersedeThreshold) | Same topic, updated value | Existing memory is **updated in-place** |
+| `< 0.75` | New distinct fact | **Saved** as a new memory |
+
+### How Supersede Works
+
+When a new fact falls in the supersede band (between `supersedeThreshold` and `deduplicationThreshold`), Vitamem recognizes it as the same topic with an updated value and replaces the existing memory content rather than creating a conflicting duplicate.
+
+**Example:** A user says _"My last A1C was 7.4%"_ and that fact is stored. Months later they say _"Current A1C is 6.8%"_. The cosine similarity between these two facts is ~0.88 — above the supersede threshold (0.75) but below the dedup threshold (0.92). Instead of storing both values (which would create conflicting memories), the old memory is updated to "Current A1C is 6.8%".
+
+### Configuring Thresholds
+
+Both thresholds are configurable via `VitamemConfig`:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  deduplicationThreshold: 0.95, // stricter duplicate detection
+  supersedeThreshold: 0.80,     // narrower supersede band
+});
+```
+
+:::tip
+The default thresholds (0.92 / 0.75) are calibrated for health companion use cases. Adjust them based on your domain — a narrower supersede band reduces false supersedes at the cost of more conflicting memories.
+:::
+
 ## Why This Matters for Health Apps
 
 Without deduplication, users who check in regularly would accumulate hundreds of redundant memories ("Has diabetes", "Is diabetic", "Manages diabetes", ...). This degrades retrieval quality because the vector store becomes diluted with near-duplicate entries.
