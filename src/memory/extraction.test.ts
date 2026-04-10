@@ -70,7 +70,8 @@ describe('extractMemories', () => {
 
     expect(llm.extractMemories).toHaveBeenCalledWith(messages);
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ content: 'Prefers TypeScript', source: 'confirmed' });
+    expect(result[0]).toMatchObject({ content: 'Prefers TypeScript', source: 'confirmed' });
+    expect(result[0].tags).toBeDefined();
   });
 
   it('filters out empty content from LLM results', async () => {

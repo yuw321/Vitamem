@@ -1,0 +1,260 @@
+---
+title: "Storage Adapters"
+description: "API reference for the StorageAdapter interface, EphemeralAdapter, and SupabaseAdapter."
+sidebar:
+  order: 5
+---
+
+# Storage Adapters
+
+Vitamem uses a `StorageAdapter` interface to abstract all persistence. The library ships with two implementations: `EphemeralAdapter` for development and `SupabaseAdapter` for production.
+
+```typescript
+import { EphemeralAdapter, SupabaseAdapter } from "vitamem";
+import type { StorageAdapter } from "vitamem";
+```
+
+---
+
+## `StorageAdapter` Interface
+
+The full interface that all storage backends must implement:
+
+```typescript
+interface StorageAdapter {
+  // Required methods
+  createThread(userId: string): Promise<Thread>;
+  getThread(threadId: string): Promise<Thread | null>;
+  updateThread(thread: Thread): Promise<Thread>;
+  addMessage(
+    threadId: string,
+    role: Message["role"],
+    content: string,
+  ): Promise<Message>;
+  getMessages(threadId: string): Promise<Message[]>;
+  saveMemory(memory: Omit<Memory, "id" | "createdAt">): Promise<Memory>;
+  getMemories(userId: string): Promise<Memory[]>;
+  searchMemories(
+    userId: string,
+    embedding: number[],
+    limit?: number,
+  ): Promise<MemoryMatch[]>;
+
+  // Optional methods
+  getThreadsByState?(state: ThreadState): Promise<Thread[]>;
+  deleteMemory?(memoryId: string): Promise<void>;
+  deleteUserMemories?(userId: string): Promise<void>;
+}
+```
+
+### Required Methods
+
+| Method | Description |
+|--------|-------------|
+| `createThread(userId)` | Create a new thread in `active` state |
+| `getThread(threadId)` | Get a thread by ID, or `null` if not found |
+| `updateThread(thread)` | Persist thread state and timestamp changes |
+| `addMessage(threadId, role, content)` | Append a message to a thread |
+| `getMessages(threadId)` | Get all messages for a thread, sorted chronologically |
+| `saveMemory(memory)` | Persist an extracted memory with its embedding |
+| `getMemories(userId)` | Get all memories for a user (used for deduplication) |
+| `searchMemories(userId, embedding, limit?)` | Semantic search over user memories |
+
+### Optional Methods
+
+| Method | Required by | Description |
+|--------|-------------|-------------|
+| `getThreadsByState(state)` | `sweepThreads()` | Get all threads in a given state |
+| `deleteMemory(memoryId)` | `deleteMemory()` | Delete a single memory (GDPR) |
+| `deleteUserMemories(userId)` | `deleteUserData()` | Delete all memories for a user (GDPR) |
+
+If a facade method depends on an optional storage method that is not implemented, it throws a descriptive error at runtime.
+
+---
+
+## `EphemeralAdapter`
+
+In-memory storage for development and testing. All data is lost when the process exits.
+
+```typescript
+import { EphemeralAdapter } from "vitamem";
+
+const adapter = new EphemeralAdapter();
+```
+
+Or use the string shortcut in config:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+});
+```
+
+### Implementation Details
+
+- Threads are stored in a `Map<string, Thread>`
+- Messages are stored in a `Map<string, Message[]>` keyed by thread ID
+- Memories are stored in a flat `Memory[]` array
+- IDs are generated with `crypto.randomUUID()`
+- `searchMemories` computes cosine similarity client-side against all user memories
+- All optional methods (`getThreadsByState`, `deleteMemory`, `deleteUserMemories`) are implemented
+
+### When to Use
+
+- Local development and prototyping
+- Unit and integration tests
+- Demos and quick experiments
+
+:::caution
+Do not use `EphemeralAdapter` in production. All data is lost on process restart. For durable storage, use `SupabaseAdapter` or a [custom adapter](/guides/custom-storage/).
+:::
+
+### Backward Compatibility
+
+`EphemeralAdapter` is also exported as `InMemoryAdapter` for backward compatibility:
+
+```typescript
+import { InMemoryAdapter } from "vitamem";
+// InMemoryAdapter === EphemeralAdapter
+```
+
+---
+
+## `SupabaseAdapter`
+
+Production storage adapter using Supabase (PostgreSQL) with optional pgvector support for server-side semantic search.
+
+```typescript
+import { SupabaseAdapter } from "vitamem";
+```
+
+Or use the string shortcut in config:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+});
+```
+
+### Constructor
+
+```typescript
+import { createClient } from "@supabase/supabase-js";
+import { SupabaseAdapter } from "vitamem";
+
+const client = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
+const adapter = new SupabaseAdapter(client);
+```
+
+When using the `storage: "supabase"` shortcut, Vitamem creates the Supabase client internally using the provided `supabaseUrl` and `supabaseKey`.
+
+### Required Database Schema
+
+The adapter expects three tables with specific column names:
+
+```sql
+create table threads (
+  id uuid primary key,
+  user_id text not null,
+  state text not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_message_at timestamptz,
+  cooling_started_at timestamptz,
+  dormant_at timestamptz,
+  closed_at timestamptz
+);
+
+create table messages (
+  id uuid primary key,
+  thread_id uuid references threads(id),
+  role text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+create extension if not exists vector;
+
+create table memories (
+  id uuid primary key,
+  user_id text not null,
+  thread_id uuid references threads(id),
+  content text not null,
+  source text not null,
+  embedding vector(1536),
+  created_at timestamptz not null default now()
+);
+```
+
+### Vector Search
+
+The adapter attempts to use a Supabase RPC function `match_memories` for server-side vector search. If the function does not exist, it falls back to client-side cosine similarity.
+
+To enable server-side search (recommended for production), create this function:
+
+```sql
+create or replace function match_memories(
+  query_embedding vector(1536),
+  match_user_id text,
+  match_limit int default 10
+) returns table (content text, source text, similarity float) as $$
+  select
+    m.content,
+    m.source,
+    1 - (m.embedding <=> query_embedding) as similarity
+  from memories m
+  where m.user_id = match_user_id
+    and m.embedding is not null
+  order by m.embedding <=> query_embedding
+  limit match_limit;
+$$ language sql stable;
+```
+
+### Implemented Methods
+
+All required and optional methods are implemented:
+
+| Method | Notes |
+|--------|-------|
+| `createThread` | Inserts into `threads` table |
+| `getThread` | Selects from `threads`, returns `null` if not found |
+| `getThreadsByState` | Filters `threads` by `state` column |
+| `updateThread` | Updates state and all timestamp columns |
+| `addMessage` | Inserts into `messages` table |
+| `getMessages` | Selects from `messages`, ordered by `created_at ASC` |
+| `saveMemory` | Inserts into `memories` table with embedding vector |
+| `getMemories` | Selects from `memories` filtered by `user_id` |
+| `searchMemories` | Uses `match_memories` RPC, falls back to client-side |
+| `deleteMemory` | Deletes from `memories` by ID |
+| `deleteUserMemories` | Deletes from `memories` by `user_id` |
+
+### Peer Dependencies
+
+The `storage: "supabase"` shortcut dynamically imports `@supabase/supabase-js`. Install it as a dependency:
+
+```bash
+npm install @supabase/supabase-js
+```
+
+If you construct the Supabase client yourself and pass a `SupabaseAdapter` instance directly, you manage the dependency yourself.
+
+---
+
+## Choosing an Adapter
+
+| Adapter | Persistence | Vector search | GDPR methods | Use case |
+|---------|-------------|---------------|--------------|----------|
+| `EphemeralAdapter` | None (in-memory) | Client-side cosine | Yes | Development, testing |
+| `SupabaseAdapter` | PostgreSQL | Server-side pgvector | Yes | Production |
+| Custom | Your choice | Your choice | Optional | Any other database |
+
+For building a custom adapter, see the [custom storage guide](/guides/custom-storage/).

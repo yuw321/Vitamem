@@ -90,15 +90,29 @@ export class EphemeralAdapter implements StorageAdapter {
     userId: string,
     embedding: number[],
     limit = 10,
+    filterTags?: string[],
   ): Promise<MemoryMatch[]> {
-    const userMemories = this.memories.filter(
+    let userMemories = this.memories.filter(
       (m) => m.userId === userId && m.embedding !== null,
     );
+
+    // Pre-filter by tags if provided
+    if (filterTags && filterTags.length > 0) {
+      userMemories = userMemories.filter(
+        (m) => m.tags && m.tags.some((t) => filterTags.includes(t)),
+      );
+    }
+
     return userMemories
       .map((m) => ({
         content: m.content,
         source: m.source,
         score: cosineSimilarity(embedding, m.embedding!),
+        id: m.id,
+        createdAt: m.createdAt,
+        pinned: m.pinned,
+        tags: m.tags,
+        embedding: m.embedding ?? undefined,
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
@@ -110,5 +124,24 @@ export class EphemeralAdapter implements StorageAdapter {
 
   async deleteUserMemories(userId: string): Promise<void> {
     this.memories = this.memories.filter((m) => m.userId !== userId);
+  }
+
+  async getLatestActiveThread(userId: string): Promise<Thread | null> {
+    const candidates = [...this.threads.values()]
+      .filter(t => t.userId === userId && (t.state === 'active' || t.state === 'cooling'))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return candidates[0] ?? null;
+  }
+
+  async getPinnedMemories(userId: string): Promise<Memory[]> {
+    return this.memories.filter(
+      (m) => m.userId === userId && m.pinned === true,
+    );
+  }
+
+  async updateMemory(memoryId: string, updates: Partial<Memory>): Promise<void> {
+    const idx = this.memories.findIndex((m) => m.id === memoryId);
+    if (idx === -1) throw new Error(`Memory not found: ${memoryId}`);
+    this.memories[idx] = { ...this.memories[idx], ...updates };
   }
 }

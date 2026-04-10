@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vitamem — Logo Concepts</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0F172A; color: #F8FAFC;
+      padding: 48px 32px;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1 {
+      font-size: 22px; font-weight: 800; letter-spacing: -0.3px;
+      color: #F8FAFC; margin-bottom: 8px;
+    }
+    .sub { font-size: 14px; color: #94A3B8; margin-bottom: 48px; }
+    .sub span { color: #14B8A6; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: #1E293B;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .card-preview {
+      display: flex; align-items: center; justify-content: center;
+      gap: 40px;
+      padding: 40px 32px;
+      background: #1E293B;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .card-preview.dark-bg { background: #0F172A; }
+    .card-preview.light-bg { background: #F8FAFC; }
+    .card-preview.mid-bg { background: #1E293B; }
+
+    .logo-size-lg img, .logo-size-lg object { width: 120px; height: 120px; }
+    .logo-size-sm img, .logo-size-sm object { width: 40px; height: 40px; }
+    .logo-size-xs img, .logo-size-xs object { width: 20px; height: 20px; }
+
+    .card-body { padding: 20px 24px 24px; }
+    .card-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: #14B8A6;
+      margin-bottom: 6px;
+    }
+    .card-name { font-size: 18px; font-weight: 800; color: #F8FAFC; margin-bottom: 8px; }
+    .card-desc { font-size: 13px; color: #94A3B8; line-height: 1.5; margin-bottom: 14px; }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #94A3B8;
+    }
+    .tag.good { background: rgba(20,184,166,0.08); border-color: rgba(20,184,166,0.2); color: #14B8A6; }
+    .tag.warn { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2); color: #F59E0B; }
+
+    .bg-toggle {
+      display: flex; gap: 8px; margin-top: 12px;
+      font-size: 12px; color: #64748B;
+      align-items: center;
+    }
+    .bg-toggle span { color: #94A3B8; }
+
+    hr { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 40px 0; }
+    .wordmark-row {
+      display: flex; align-items: center; gap: 16px;
+      background: #1E293B; padding: 20px 24px; border-radius: 12px;
+      margin-top: 32px;
+    }
+    .wordmark-row img { width: 36px; height: 36px; }
+    .wm-text {
+      font-size: 22px; font-weight: 800; letter-spacing: -0.4px; color: #F8FAFC;
+    }
+    .wm-text span { color: #14B8A6; }
+    .wm-sub { font-size: 11px; color: #64748B; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+<h1>Vitamem — Logo Concepts</h1>
+<p class="sub">4 directions. Pick one and I'll refine it — or mix elements from different options. All in teal <span>#14B8A6 / #0F766E</span>.</p>
+
+<div class="grid">
+
+  <!-- A: Pulse V -->
+  <div class="card">
+    <div class="card-preview dark-bg">
+      <div class="logo-size-lg"><img src="logo-concept-a.svg" alt="Concept A"/></div>
+      <div class="logo-size-sm"><img src="logo-concept-a.svg" alt=""/></div>
+      <div class="logo-size-xs"><img src="logo-concept-a.svg" alt=""/></div>
+    </div>
+    <div class="card-body">
+      <div class="card-label">Option A</div>
+      <div class="card-name">Pulse V</div>
+      <div class="card-desc">
+        The V letterform, with the right arm continuing as an EKG QRS heartbeat line.
+        A memory node glows at the vertex. Instant health + tech readability.
+      </div>
+      <div class="card-tags">
+        <span class="tag good">Memorable</span>
+        <span class="tag good">Health-forward</span>
+        <span class="tag good">Works as wordmark</span>
+        <span class="tag warn">Less abstract</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- B: Lifecycle Arc -->
+  <div class="card">
+    <div class="card-preview dark-bg">
+      <div class="logo-size-lg"><img src="logo-concept-b.svg" alt="Concept B"/></div>
+      <div class="logo-size-sm"><img src="logo-concept-b.svg" alt=""/></div>
+      <div class="logo-size-xs"><img src="logo-concept-b.svg" alt=""/></div>
+    </div>
+    <div class="card-body">
+      <div class="card-label">Option B</div>
+      <div class="card-name">Lifecycle Arc</div>
+      <div class="card-desc">
+        Four nodes on a bezier arc — one per thread state (active, cooling, dormant, closed).
+        The core product metaphor made visual. Great for docs and diagrams too.
+      </div>
+      <div class="card-tags">
+        <span class="tag good">Most on-brand</span>
+        <span class="tag good">Tells the story</span>
+        <span class="tag warn">Complex at small sizes</span>
+        <span class="tag warn">Needs labels to explain</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- C: Bold V Monogram -->
+  <div class="card">
+    <div class="card-preview mid-bg">
+      <div class="logo-size-lg"><img src="logo-concept-c.svg" alt="Concept C"/></div>
+      <div class="logo-size-sm"><img src="logo-concept-c.svg" alt=""/></div>
+      <div class="logo-size-xs"><img src="logo-concept-c.svg" alt=""/></div>
+    </div>
+    <div class="card-body">
+      <div class="card-label">Option C</div>
+      <div class="card-name">Bold V Monogram</div>
+      <div class="card-desc">
+        A thick, filled V with a teal-to-deep gradient on a dark rounded square.
+        Glowing memory dot at vertex. Versatile: works at 16px favicon or 1024px App Store icon.
+      </div>
+      <div class="card-tags">
+        <span class="tag good">Best for app icon / favicon</span>
+        <span class="tag good">Scales to any size</span>
+        <span class="tag good">Clean, modern</span>
+        <span class="tag warn">Generic V shape</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- D: Memory Thread -->
+  <div class="card">
+    <div class="card-preview dark-bg">
+      <div class="logo-size-lg"><img src="logo-concept-d.svg" alt="Concept D"/></div>
+      <div class="logo-size-sm"><img src="logo-concept-d.svg" alt=""/></div>
+      <div class="logo-size-xs"><img src="logo-concept-d.svg" alt=""/></div>
+    </div>
+    <div class="card-body">
+      <div class="card-label">Option D</div>
+      <div class="card-name">Memory Thread</div>
+      <div class="card-desc">
+        Two overlapping teardrop/leaf curves weaving into a V — one solid teal, one deeper.
+        Suggests two interleaved memory threads converging. Abstract, organic, premium.
+      </div>
+      <div class="card-tags">
+        <span class="tag good">Most distinctive</span>
+        <span class="tag good">Organic / health feel</span>
+        <span class="tag warn">Abstract — needs context</span>
+        <span class="tag warn">Harder to render tiny</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<hr/>
+
+<p style="font-size:13px;color:#64748B;margin-bottom:16px;">Wordmark combinations (using each mark with "vitamem" text):</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:12px;">
+
+  <div class="wordmark-row">
+    <img src="logo-concept-a.svg" alt=""/>
+    <div>
+      <div class="wm-text">vita<span>mem</span></div>
+      <div class="wm-sub">Option A · Pulse V</div>
+    </div>
+  </div>
+
+  <div class="wordmark-row">
+    <img src="logo-concept-c.svg" alt=""/>
+    <div>
+      <div class="wm-text">vita<span>mem</span></div>
+      <div class="wm-sub">Option C · Bold V</div>
+    </div>
+  </div>
+
+  <div class="wordmark-row">
+    <img src="logo-concept-d.svg" alt=""/>
+    <div>
+      <div class="wm-text">vita<span>mem</span></div>
+      <div class="wm-sub">Option D · Memory Thread</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

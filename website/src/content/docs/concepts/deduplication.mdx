@@ -1,0 +1,63 @@
+---
+title: "Deduplication"
+description: "How Vitamem prevents storing the same fact twice using cosine similarity."
+sidebar:
+  order: 3
+---
+
+# Deduplication
+
+Vitamem uses **cosine similarity** to prevent storing semantically duplicate memories. When new facts are extracted from a conversation, they are compared against all existing memories for that user before being saved.
+
+## How It Works
+
+For each newly extracted fact:
+
+1. The fact is embedded into a vector
+2. The vector is compared against all existing user memory vectors using cosine similarity
+3. If similarity ≥ threshold (default: **0.92**), the fact is considered a duplicate and skipped
+4. If similarity < threshold for all existing memories, the fact is saved
+
+Additionally, new facts within the same batch are deduplicated against each other — so if the same conversation produces two similar facts, only the first one is kept.
+
+## The Similarity Threshold
+
+The default threshold of **0.92** is calibrated to:
+
+- Catch near-identical phrasings ("Takes metformin" vs "Is on metformin")
+- Allow genuinely distinct but related facts to coexist ("Takes metformin 500mg" vs "Takes metformin 1000mg")
+
+You can adjust this threshold when initializing:
+
+```typescript
+// Lower threshold = more aggressive deduplication (fewer, broader memories)
+// Higher threshold = more permissive (more memories, more specificity)
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+// deduplication threshold is set in the embedding pipeline, default 0.92
+```
+
+## Example
+
+Suppose the user has an existing memory: **"Has Type 2 diabetes"**.
+
+In a new conversation they say: _"As a diabetic, I need to watch my diet carefully."_
+
+The extraction might produce: **"Is diabetic"**
+
+Cosine similarity between "Has Type 2 diabetes" and "Is diabetic" vectors ≈ 0.95 → **duplicate, skipped**.
+
+Later they say: _"My A1C was 7.2 at my last checkup."_
+
+Extraction produces: **"A1C was 7.2"**
+
+Cosine similarity against all existing memories < 0.92 → **new fact, saved**.
+
+## Why This Matters for Health Apps
+
+Without deduplication, users who check in regularly would accumulate hundreds of redundant memories ("Has diabetes", "Is diabetic", "Manages diabetes", ...). This degrades retrieval quality because the vector store becomes diluted with near-duplicate entries.
+
+Vitamem's deduplication keeps the memory store lean and retrieval precise — which is especially important for health companions that may interact with a user daily over months or years.

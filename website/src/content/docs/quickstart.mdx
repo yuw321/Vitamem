@@ -1,0 +1,137 @@
+---
+title: "Quickstart"
+description: "Get up and running with Vitamem in under 5 minutes."
+sidebar:
+  order: 3
+---
+
+## Installation
+
+```bash
+npm install vitamem openai
+```
+
+## Step 1: Initialize Vitamem
+
+The unified config API handles LLM and storage setup in a single call. No manual adapter boilerplate required.
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+```
+
+That's it -- three lines to a working memory system. Vitamem creates the OpenAI adapter internally using `gpt-5.4-mini` for chat and `text-embedding-3-small` for embeddings.
+
+:::tip
+For Anthropic, change `provider` to `"anthropic"` and supply your Anthropic
+  API key. For local models, use `provider: "ollama"` with no API key.
+:::
+
+## Step 2: Start a health companion session
+
+```typescript
+// Create a thread for a user
+const thread = await mem.createThread({ userId: "user-123" });
+console.log(thread.state); // 'active'
+
+// Chat -- messages are stored, LLM responds naturally
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: "I've been managing Type 2 diabetes for 3 years. I take metformin daily.",
+});
+console.log(reply); // AI response
+
+// Continue the conversation
+await mem.chat({
+  threadId: thread.id,
+  message: "My doctor also recommended I exercise 30 minutes a day.",
+});
+```
+
+## Step 3: Extract memories when the session ends
+
+When the user's session goes quiet, trigger the dormant transition to extract and embed memories:
+
+```typescript
+// Transitions thread to dormant and runs the embedding pipeline:
+// 1. Extracts facts from messages via LLM
+// 2. Embeds each fact as a vector
+// 3. Deduplicates against existing memories
+// 4. Saves new unique memories
+await mem.triggerDormantTransition(thread.id);
+
+const dormantThread = await mem.getThread(thread.id);
+console.log(dormantThread.state); // 'dormant'
+```
+
+## Step 4: Retrieve memories for the next session
+
+When the user returns, retrieve relevant memories to enrich the conversation:
+
+```typescript
+const memories = await mem.retrieve({
+  userId: "user-123",
+  query: "health conditions and medications",
+  limit: 5,
+});
+
+for (const m of memories) {
+  console.log(`${m.content} (${m.source}, score: ${m.score.toFixed(3)})`);
+}
+// "Has Type 2 diabetes" (confirmed, score: 0.962)
+// "Takes metformin daily" (confirmed, score: 0.941)
+// "Should exercise 30 minutes daily" (inferred, score: 0.887)
+```
+
+You can now inject these memories into the system prompt of the new conversation so the AI responds with full context.
+
+## Step 5: Or use autoRetrieve
+
+Instead of manually retrieving and injecting memories, enable `autoRetrieve` and Vitamem handles it for you:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+});
+
+// Memories from previous sessions are automatically injected
+// into the system prompt on every chat() call
+const { reply, memories } = await mem.chat({
+  threadId: newThread.id,
+  message: "What medications am I on?",
+});
+
+console.log(memories);
+// [{ content: "Takes metformin daily", source: "confirmed", score: 0.95 }]
+```
+
+## Production: Use Supabase
+
+For production, swap `"ephemeral"` with `"supabase"`:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL!,
+  supabaseKey: process.env.SUPABASE_KEY!,
+});
+```
+
+See the [Supabase setup](/api-reference/storage-adapter/#supabaseadapter) for the required SQL schema.
+
+## Next Steps
+
+- [Installation](/installation/) -- provider setup, peer dependencies, and TypeScript config
+- [Thread Lifecycle](/concepts/thread-lifecycle/) -- understand how state transitions work
+- [Health Companion Guide](/guides/health-companion/) -- a complete health companion pattern
+- [API Reference](/api-reference/create-vitamem/) -- full function and type documentation

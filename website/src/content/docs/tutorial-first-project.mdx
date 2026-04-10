@@ -1,0 +1,292 @@
+---
+title: "Tutorial: Build a Health Companion"
+description: "Build a health companion with persistent memory from scratch in about 10 minutes."
+sidebar:
+  order: 4
+---
+
+This tutorial walks through building a health companion that remembers user details across sessions. By the end you will have a working app that:
+
+- Chats with users about their health
+- Extracts and stores facts when a session ends
+- Recalls those facts when the user returns
+- Automatically injects memories using `autoRetrieve`
+
+**Time:** ~10 minutes  
+**Prerequisites:** Node.js >= 18, an OpenAI API key
+
+## 1. Project Setup
+
+Create a new project and install dependencies:
+
+```bash
+mkdir health-companion && cd health-companion
+npm init -y
+npm install vitamem openai
+npm install -D typescript @types/node
+```
+
+Add a `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
+```
+
+Update `package.json` to use ESM:
+
+```json
+{
+  "type": "module"
+}
+```
+
+## 2. Create a Vitamem Instance
+
+Create `src/index.ts`:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+
+console.log("Vitamem initialized");
+```
+
+Run it to verify setup:
+
+```bash
+OPENAI_API_KEY=sk-... npx tsx src/index.ts
+```
+
+You should see `Vitamem initialized`. The `"ephemeral"` storage keeps everything in memory, which is perfect for development.
+
+## 3. Create a Thread and Chat
+
+A **thread** represents a single conversation session with a user. Add the following to `src/index.ts`:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+
+// Create a thread for user "alice"
+const thread = await mem.createThread({ userId: "alice" });
+console.log(`Thread created: ${thread.id} (state: ${thread.state})`);
+// Thread created: abc123 (state: active)
+
+// First message
+const r1 = await mem.chat({
+  threadId: thread.id,
+  message: "Hi! I've had Type 2 diabetes for about 3 years now.",
+});
+console.log("AI:", r1.reply);
+
+// Second message
+const r2 = await mem.chat({
+  threadId: thread.id,
+  message: "I take metformin 500mg twice a day, and I try to walk 30 minutes after dinner.",
+});
+console.log("AI:", r2.reply);
+
+// Third message
+const r3 = await mem.chat({
+  threadId: thread.id,
+  message: "My A1C was 6.8 at my last checkup. My doctor wants it under 6.5.",
+});
+console.log("AI:", r3.reply);
+```
+
+Each `chat()` call stores the user message, calls the LLM, stores the assistant reply, and returns the response. The thread stays in the `active` state as long as messages are flowing.
+
+## 4. Trigger the Dormant Transition
+
+When the user finishes their session, trigger the dormant transition. This is where Vitamem's lifecycle approach shines -- instead of embedding every message as it arrives, it waits until the conversation ends, then extracts and embeds a deduplicated set of facts.
+
+```typescript
+// Session is over -- extract and embed memories
+await mem.triggerDormantTransition(thread.id);
+
+const updated = await mem.getThread(thread.id);
+console.log(`Thread state: ${updated!.state}`);
+// Thread state: dormant
+```
+
+Behind the scenes, Vitamem:
+
+1. Transitions the thread from `active` to `cooling` to `dormant`
+2. Sends the full conversation to the LLM with an extraction prompt
+3. Gets back structured facts like `"Has Type 2 diabetes"` and `"Takes metformin 500mg twice daily"`
+4. Embeds each fact as a vector
+5. Compares against existing memories using cosine similarity (threshold: 0.92) to avoid duplicates
+6. Saves only genuinely new facts
+
+## 5. Retrieve Memories in a New Session
+
+Simulate the user returning for a new session. Use `retrieve()` to find memories relevant to a query:
+
+```typescript
+// --- New session, later that week ---
+
+console.log("\n--- New session ---");
+
+const memories = await mem.retrieve({
+  userId: "alice",
+  query: "What health conditions and medications does this user have?",
+  limit: 5,
+});
+
+console.log("Retrieved memories:");
+for (const m of memories) {
+  console.log(`  - ${m.content} (${m.source}, score: ${m.score.toFixed(3)})`);
+}
+// Retrieved memories:
+//   - Has Type 2 diabetes (confirmed, score: 0.962)
+//   - Takes metformin 500mg twice daily (confirmed, score: 0.941)
+//   - Last A1C was 6.8 (confirmed, score: 0.912)
+//   - Goal: get A1C under 6.5 (confirmed, score: 0.897)
+//   - Walks 30 minutes after dinner (confirmed, score: 0.874)
+```
+
+You can inject these into a system prompt so the AI responds as if it remembers the user:
+
+```typescript
+const newThread = await mem.createThread({ userId: "alice" });
+
+const memoryContext = memories
+  .map((m) => `- ${m.content}`)
+  .join("\n");
+
+const { reply } = await mem.chat({
+  threadId: newThread.id,
+  message: "How am I doing with my health goals?",
+  systemPrompt: `You are a caring health companion. Here is what you remember about this user:\n${memoryContext}`,
+});
+
+console.log("AI:", reply);
+// The AI will reference the user's diabetes, metformin, A1C, and exercise habits
+```
+
+## 6. Use autoRetrieve for Automatic Memory Injection
+
+Manually retrieving and injecting memories works, but Vitamem can do it automatically. Enable `autoRetrieve` in the config:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+});
+```
+
+With `autoRetrieve` enabled, every `chat()` call automatically:
+
+1. Embeds the user's message
+2. Searches for relevant memories from previous sessions
+3. Injects matching memories into the system prompt before calling the LLM
+
+```typescript
+const thread = await mem.createThread({ userId: "alice" });
+
+// No manual retrieve() or systemPrompt needed
+const { reply, memories } = await mem.chat({
+  threadId: thread.id,
+  message: "Can you remind me what my last A1C was?",
+});
+
+console.log("AI:", reply);
+// AI references the A1C of 6.8 from the previous session
+
+console.log("Injected memories:", memories);
+// [{ content: "Last A1C was 6.8", source: "confirmed", score: 0.95 }, ...]
+```
+
+This removes the need to manage memory injection yourself. The AI naturally responds with context from past sessions.
+
+## Complete Example
+
+Here is the full script combining all the steps above:
+
+```typescript
+// src/index.ts
+import { createVitamem } from "vitamem";
+
+async function main() {
+  // --- Session 1: Initial check-in ---
+  const mem = await createVitamem({
+    provider: "openai",
+    apiKey: process.env.OPENAI_API_KEY!,
+    storage: "ephemeral",
+    autoRetrieve: true,
+  });
+
+  const thread1 = await mem.createThread({ userId: "alice" });
+
+  await mem.chat({
+    threadId: thread1.id,
+    message: "Hi! I have Type 2 diabetes and take metformin 500mg twice a day.",
+  });
+
+  await mem.chat({
+    threadId: thread1.id,
+    message: "My A1C was 6.8 last month. Trying to get it under 6.5.",
+  });
+
+  await mem.chat({
+    threadId: thread1.id,
+    message: "I walk 30 minutes after dinner most nights.",
+  });
+
+  // End session -- extract memories
+  await mem.triggerDormantTransition(thread1.id);
+  console.log("Session 1 complete. Memories extracted.\n");
+
+  // --- Session 2: User returns ---
+  const thread2 = await mem.createThread({ userId: "alice" });
+
+  const { reply, memories } = await mem.chat({
+    threadId: thread2.id,
+    message: "Hey, I just got my new A1C results. How was my last one?",
+  });
+
+  console.log("AI:", reply);
+  console.log("Memories used:", memories?.map((m) => m.content));
+}
+
+main().catch(console.error);
+```
+
+Run it:
+
+```bash
+OPENAI_API_KEY=sk-... npx tsx src/index.ts
+```
+
+## What's Next
+
+You now have a working health companion with persistent memory. Here are some directions to explore:
+
+  - [**Thread Lifecycle**](/concepts/thread-lifecycle/) -- Understand active, cooling, dormant, and closed states
+  - [**Memory Extraction**](/concepts/memory-extraction/) -- How facts are extracted and classified as confirmed vs. inferred
+  - [**Sweep Threads**](/api-reference/create-vitamem/) -- Use `sweepThreads()` to automate lifecycle transitions on a cron schedule
+  - [**Production Storage**](/guides/custom-storage/) -- Switch from ephemeral to Supabase for persistent storage

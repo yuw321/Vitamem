@@ -1,0 +1,141 @@
+---
+title: "Installation"
+description: "Install Vitamem and configure your LLM provider."
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+## Install Vitamem
+
+```bash
+npm install vitamem
+```
+
+Vitamem requires **Node.js 18 or later**.
+
+## Provider Setup
+
+Vitamem ships built-in adapters for OpenAI, Anthropic, and Ollama. Install the peer dependency for your chosen provider.
+
+<Tabs>
+  <TabItem label="OpenAI">
+    ```bash
+    npm install openai
+    ```
+
+    ```typescript
+    import { createVitamem } from "vitamem";
+
+    const mem = await createVitamem({
+      provider: "openai",
+      apiKey: process.env.OPENAI_API_KEY!,
+      storage: "ephemeral",
+    });
+    ```
+
+    Default models: `gpt-5.4-mini` (chat) and `text-embedding-3-small` (embeddings).
+  </TabItem>
+  <TabItem label="Anthropic">
+    ```bash
+    npm install @anthropic-ai/sdk
+    ```
+
+    ```typescript
+    import { createVitamem } from "vitamem";
+
+    const mem = await createVitamem({
+      provider: "anthropic",
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+      storage: "ephemeral",
+    });
+    ```
+
+    :::note
+The Anthropic adapter uses OpenAI-compatible embeddings under the hood,
+      so the `apiKey` is used for both chat and embedding calls.
+:::
+  </TabItem>
+  <TabItem label="Ollama (local)">
+    ```bash
+    # No npm peer dependency needed — Ollama uses HTTP
+    ollama pull llama3
+    ollama pull nomic-embed-text
+    ```
+
+    ```typescript
+    import { createVitamem } from "vitamem";
+
+    const mem = await createVitamem({
+      provider: "ollama",
+      storage: "ephemeral",
+    });
+    ```
+
+    No API key required. Defaults to `http://localhost:11434`.
+  </TabItem>
+</Tabs>
+
+## Peer Dependencies
+
+All provider SDKs are **optional** peer dependencies. You only need to install the one you use.
+
+| Provider   | Peer dependency         | Minimum version |
+| ---------- | ----------------------- | --------------- |
+| OpenAI     | `openai`                | >= 4.0.0        |
+| Anthropic  | `@anthropic-ai/sdk`     | >= 0.30.0       |
+| Ollama     | None                    | --              |
+| Supabase   | `@supabase/supabase-js` | >= 2.0.0        |
+
+## TypeScript Setup
+
+Vitamem is written in TypeScript and ships with full type declarations. No additional `@types` package is needed.
+
+Recommended `tsconfig.json` settings:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true
+  }
+}
+```
+
+Vitamem is published as ESM (`"type": "module"`). If your project uses CommonJS, you may need to use dynamic `import()` or switch to ESM.
+
+## Storage Backends
+
+Vitamem supports two built-in storage options:
+
+- **`"ephemeral"`** -- In-memory storage. Data is lost when the process exits. Great for development and testing.
+- **`"supabase"`** -- Persistent storage backed by Supabase (Postgres + pgvector). Use this for production.
+
+```typescript
+// Development
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+
+// Production
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL!,
+  supabaseKey: process.env.SUPABASE_KEY!,
+});
+```
+
+You can also pass a custom `StorageAdapter` instance for other backends. See [Custom Storage](/guides/custom-storage/).
+
+## Next Steps
+
+  - [**Quickstart**](/quickstart/) -- Build your first health companion in 5 minutes
+  - [**Tutorial**](/tutorial-first-project/) -- Step-by-step guide to building a health companion from scratch

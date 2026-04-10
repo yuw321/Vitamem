@@ -42,12 +42,19 @@ export interface Memory {
   source: MemorySource;
   embedding: number[] | null;
   createdAt: Date;
+  pinned?: boolean;
+  tags?: string[];
 }
 
 export interface MemoryMatch {
   content: string;
   source: MemorySource;
   score: number;
+  id?: string;
+  createdAt?: Date;
+  pinned?: boolean;
+  tags?: string[];
+  embedding?: number[];
 }
 
 // ── Storage adapter interface ──
@@ -69,9 +76,13 @@ export interface StorageAdapter {
     userId: string,
     embedding: number[],
     limit?: number,
+    filterTags?: string[],
   ): Promise<MemoryMatch[]>;
   deleteMemory?(memoryId: string): Promise<void>;
   deleteUserMemories?(userId: string): Promise<void>;
+  getLatestActiveThread?(userId: string): Promise<Thread | null>;
+  getPinnedMemories?(userId: string): Promise<Memory[]>;
+  updateMemory?(memoryId: string, updates: Partial<Memory>): Promise<void>;
 }
 
 // ── LLM adapter interface ──
@@ -85,6 +96,8 @@ export interface LLMAdapter {
 }
 
 // ── Configuration ──
+
+import type { PresetName } from "./presets.js";
 
 export type ProviderName = "openai" | "anthropic" | "ollama";
 
@@ -103,10 +116,19 @@ export interface VitamemConfig {
   supabaseKey?: string;
 
   // Behavioral settings
+  preset?: PresetName;
   coolingTimeoutMs?: number; // default: 6 hours
+  dormantTimeoutMs?: number; // default: coolingTimeoutMs
   closedTimeoutMs?: number; // default: 30 days
   embeddingConcurrency?: number; // default: 5
   autoRetrieve?: boolean; // default: false
+
+  // Retrieval controls
+  onRetrieve?: (memories: MemoryMatch[], query: string) => MemoryMatch[] | Promise<MemoryMatch[]>;
+  minScore?: number; // default: 0 (no filtering)
+  recencyWeight?: number; // 0-1, default: 0 (pure cosine similarity)
+  recencyMaxAgeMs?: number; // normalization window, default: 90 days
+  diversityWeight?: number; // 0-1, default: 0 (standard top-K)
 }
 
 // ── Facade interface ──
@@ -117,13 +139,34 @@ export interface Vitamem {
     threadId: string;
     message: string;
     systemPrompt?: string;
-  }): Promise<{ reply: string; thread: Thread; memories?: MemoryMatch[] }>;
+  }): Promise<{
+    reply: string;
+    thread: Thread;
+    memories?: MemoryMatch[];
+    previousThreadId?: string;
+    redirected?: boolean;
+  }>;
   retrieve(opts: {
     userId: string;
     query: string;
     limit?: number;
+    filterTags?: string[];
   }): Promise<MemoryMatch[]>;
+  pinMemory(memoryId: string): Promise<void>;
+  unpinMemory(memoryId: string): Promise<void>;
   getThread(threadId: string): Promise<Thread | null>;
+  getOrCreateThread(userId: string): Promise<Thread>;
+  chatWithUser(opts: {
+    userId: string;
+    message: string;
+    systemPrompt?: string;
+  }): Promise<{
+    reply: string;
+    thread: Thread;
+    memories?: MemoryMatch[];
+    previousThreadId?: string;
+    redirected?: boolean;
+  }>;
   triggerDormantTransition(threadId: string): Promise<void>;
   closeThread(threadId: string): Promise<void>;
   sweepThreads(): Promise<void>;

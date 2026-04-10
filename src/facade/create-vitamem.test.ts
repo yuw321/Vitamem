@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createVitamem } from "./create-vitamem.js";
-import { Thread, Message, LLMAdapter, StorageAdapter } from "../types.js";
+import { Thread, Message, MemoryMatch, LLMAdapter, StorageAdapter } from "../types.js";
 import { EphemeralAdapter } from "../storage/ephemeral-adapter.js";
+import { PRESETS } from "../presets.js";
 
 // ── Helpers ──
 
@@ -682,5 +683,472 @@ describe("createVitamem config validation", () => {
     const mem = await createVitamem({ llm, storage: "ephemeral" });
     const thread = await mem.createThread({ userId: "u_1" });
     expect(thread.state).toBe("active");
+  });
+});
+
+// ── getOrCreateThread ──
+
+describe("createVitamem.getOrCreateThread", () => {
+  it("returns existing active thread", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const thread = await mem.createThread({ userId: "u_123" });
+    const found = await mem.getOrCreateThread("u_123");
+
+    expect(found.id).toBe(thread.id);
+    expect(found.state).toBe("active");
+  });
+
+  it("reactivates a cooling thread", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const thread = await mem.createThread({ userId: "u_123" });
+    const coolingThread: Thread = {
+      ...thread,
+      state: "cooling",
+      coolingStartedAt: new Date(),
+    };
+    await storage.updateThread(coolingThread);
+
+    const found = await mem.getOrCreateThread("u_123");
+    expect(found.id).toBe(thread.id);
+    expect(found.state).toBe("active");
+  });
+
+  it("creates new thread when none found", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const thread = await mem.getOrCreateThread("u_new");
+    expect(thread.state).toBe("active");
+    expect(thread.userId).toBe("u_new");
+  });
+});
+
+// ── chatWithUser ──
+
+describe("createVitamem.chatWithUser", () => {
+  it("basic flow: creates thread and chats", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter();
+    const mem = await createVitamem({ llm, storage });
+
+    const result = await mem.chatWithUser({
+      userId: "u_123",
+      message: "Hello!",
+    });
+
+    expect(result.reply).toContain("Reply to: Hello!");
+    expect(result.thread.userId).toBe("u_123");
+  });
+
+  it("injects memories with autoRetrieve", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage, autoRetrieve: true });
+
+    await storage.saveMemory({
+      userId: "u_123",
+      threadId: "t-1",
+      content: "Likes running",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+
+    const result = await mem.chatWithUser({
+      userId: "u_123",
+      message: "What are my hobbies?",
+    });
+
+    expect(result.memories).toBeDefined();
+    expect(result.memories!.length).toBeGreaterThan(0);
+  });
+});
+
+// ── dormant thread guard ──
+
+describe("createVitamem dormant/closed thread guard", () => {
+  it("auto-creates new thread when chatting on dormant thread", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const thread = await mem.createThread({ userId: "u_123" });
+    await mem.triggerDormantTransition(thread.id);
+
+    const result = await mem.chat({
+      threadId: thread.id,
+      message: "I am back!",
+    });
+
+    expect(result.redirected).toBe(true);
+    expect(result.previousThreadId).toBe(thread.id);
+    expect(result.thread.id).not.toBe(thread.id);
+    expect(result.thread.state).toBe("active");
+    expect(result.reply).toContain("Reply to: I am back!");
+  });
+
+  it("auto-creates new thread when chatting on closed thread", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const thread = await mem.createThread({ userId: "u_123" });
+    await mem.triggerDormantTransition(thread.id);
+    await mem.closeThread(thread.id);
+
+    const result = await mem.chat({
+      threadId: thread.id,
+      message: "Hello again!",
+    });
+
+    expect(result.redirected).toBe(true);
+    expect(result.previousThreadId).toBe(thread.id);
+    expect(result.thread.id).not.toBe(thread.id);
+  });
+});
+
+// ── preset resolution ──
+
+describe("createVitamem preset resolution", () => {
+  it("applies preset values", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({
+      llm: makeLLMAdapter(),
+      storage,
+      preset: "daily-checkin",
+    });
+
+    // Verify sweep uses preset coolingTimeoutMs (2 hours)
+    // Create a thread with lastMessageAt 1 hour ago — should NOT cool
+    const thread = await mem.createThread({ userId: "u_123" });
+    const recent: Thread = {
+      ...thread,
+      lastMessageAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
+    };
+    await storage.updateThread(recent);
+
+    await mem.sweepThreads();
+    const updated = await storage.getThread(thread.id);
+    expect(updated!.state).toBe("active"); // 1hr < 2hr preset
+  });
+
+  it("explicit values override preset values", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({
+      llm: makeLLMAdapter(),
+      storage,
+      preset: "daily-checkin", // coolingTimeoutMs: 2 hours
+      coolingTimeoutMs: 100, // explicit override: 100ms
+    });
+
+    const thread = await mem.createThread({ userId: "u_123" });
+    const old: Thread = {
+      ...thread,
+      lastMessageAt: new Date(Date.now() - 200),
+    };
+    await storage.updateThread(old);
+
+    await mem.sweepThreads();
+    const updated = await storage.getThread(thread.id);
+    expect(updated!.state).toBe("cooling"); // explicit 100ms used
+  });
+});
+
+// ── Tier 1: onRetrieve hook ──
+
+describe("createVitamem.onRetrieve hook", () => {
+  it("passes results through onRetrieve callback", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const onRetrieve = vi.fn().mockImplementation((memories: MemoryMatch[]) => {
+      return memories.filter((m) => m.content.includes("keep"));
+    });
+    const mem = await createVitamem({ llm, storage, onRetrieve });
+
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "keep this",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "discard this",
+      source: "confirmed",
+      embedding: [0.9, 0.1, 0],
+    });
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test" });
+    expect(onRetrieve).toHaveBeenCalled();
+    expect(results.every((r) => r.content.includes("keep"))).toBe(true);
+  });
+
+  it("onRetrieve receives query string", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({ embed: vi.fn().mockResolvedValue([1, 0, 0]) });
+    let capturedQuery = "";
+    const onRetrieve = vi.fn().mockImplementation((memories: MemoryMatch[], query: string) => {
+      capturedQuery = query;
+      return memories;
+    });
+    const mem = await createVitamem({ llm, storage, onRetrieve });
+
+    await mem.retrieve({ userId: "u_1", query: "my health" });
+    expect(capturedQuery).toBe("my health");
+  });
+});
+
+// ── Tier 1: minScore ──
+
+describe("createVitamem.minScore", () => {
+  it("filters out results below minScore", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage, minScore: 0.5 });
+
+    // High similarity
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "High match",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+    // Low similarity (orthogonal)
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Low match",
+      source: "confirmed",
+      embedding: [0, 1, 0],
+    });
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test" });
+    expect(results.every((r) => r.score >= 0.5 || r.pinned)).toBe(true);
+  });
+
+  it("returns all results when minScore is 0 (default)", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage });
+
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Any match",
+      source: "confirmed",
+      embedding: [0, 1, 0],
+    });
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test" });
+    expect(results.length).toBeGreaterThan(0);
+  });
+});
+
+// ── Tier 2: Pinned memories ──
+
+describe("createVitamem.pinMemory / unpinMemory", () => {
+  it("pins and unpins a memory", async () => {
+    const storage = new EphemeralAdapter();
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    const saved = await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Important allergy",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+
+    await mem.pinMemory(saved.id);
+    let pinned = await storage.getPinnedMemories!("u_1");
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0].pinned).toBe(true);
+
+    await mem.unpinMemory(saved.id);
+    pinned = await storage.getPinnedMemories!("u_1");
+    expect(pinned).toHaveLength(0);
+  });
+
+  it("pinned memories always appear in retrieval results", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([0, 1, 0]),
+    });
+    const mem = await createVitamem({ llm, storage, minScore: 0.99 });
+
+    const saved = await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Pinned fact",
+      source: "confirmed",
+      embedding: [1, 0, 0], // orthogonal to query — would fail minScore
+    });
+    await mem.pinMemory(saved.id);
+
+    const results = await mem.retrieve({ userId: "u_1", query: "anything" });
+    expect(results.some((r) => r.content === "Pinned fact")).toBe(true);
+  });
+
+  it("pinned memories are not duplicated in results", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage });
+
+    const saved = await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Unique pinned",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+    await mem.pinMemory(saved.id);
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test" });
+    const matching = results.filter((r) => r.content === "Unique pinned");
+    expect(matching).toHaveLength(1);
+  });
+
+  it("throws when storage doesn't support updateMemory", async () => {
+    const storage = new EphemeralAdapter();
+    (storage as any).updateMemory = undefined;
+    const mem = await createVitamem({ llm: makeLLMAdapter(), storage });
+
+    await expect(mem.pinMemory("mem-1")).rejects.toThrow("requires a storage adapter");
+    await expect(mem.unpinMemory("mem-1")).rejects.toThrow("requires a storage adapter");
+  });
+});
+
+// ── Tier 2: Recency weighting (integration) ──
+
+describe("createVitamem.recencyWeight", () => {
+  it("boosts recent memories in retrieval", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({
+      llm,
+      storage,
+      recencyWeight: 0.8,
+      recencyMaxAgeMs: 90 * 24 * 60 * 60 * 1000,
+    });
+
+    // Old memory with high similarity
+    const old = await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Old high-sim",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+    // Manually backdate
+    await storage.updateMemory!(old.id, {
+      createdAt: new Date(Date.now() - 80 * 24 * 60 * 60 * 1000),
+    });
+
+    // Recent memory with similar embedding
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Recent sim",
+      source: "confirmed",
+      embedding: [0.95, 0.3, 0],
+    });
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test" });
+    expect(results.length).toBeGreaterThan(0);
+    // Recent memory should be boosted
+    expect(results[0].content).toBe("Recent sim");
+  });
+});
+
+// ── Tier 3: Tag filtering ──
+
+describe("createVitamem.filterTags", () => {
+  it("filters retrieval by tags", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage });
+
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Takes metformin",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+      tags: ["medication"],
+    } as any);
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "Likes yoga",
+      source: "confirmed",
+      embedding: [0.9, 0.1, 0],
+      tags: ["lifestyle"],
+    } as any);
+
+    const results = await mem.retrieve({
+      userId: "u_1",
+      query: "test",
+      filterTags: ["medication"],
+    });
+    expect(results.every((r) => r.tags?.includes("medication") || r.pinned)).toBe(true);
+  });
+});
+
+// ── Tier 3: MMR diversity (integration) ──
+
+describe("createVitamem.diversityWeight", () => {
+  it("promotes diverse results over similar ones", async () => {
+    const storage = new EphemeralAdapter();
+    const llm = makeLLMAdapter({
+      embed: vi.fn().mockResolvedValue([1, 0, 0]),
+    });
+    const mem = await createVitamem({ llm, storage, diversityWeight: 0.7 });
+
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "A",
+      source: "confirmed",
+      embedding: [1, 0, 0],
+    });
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "A-clone",
+      source: "confirmed",
+      embedding: [0.99, 0.1, 0],
+    });
+    await storage.saveMemory({
+      userId: "u_1",
+      threadId: "t-1",
+      content: "B-diverse",
+      source: "confirmed",
+      embedding: [0, 1, 0],
+    });
+
+    const results = await mem.retrieve({ userId: "u_1", query: "test", limit: 2 });
+    expect(results).toHaveLength(2);
+    // Should include A (top score) and B-diverse (diverse) rather than A + A-clone
+    const contents = results.map((r) => r.content);
+    expect(contents).toContain("A");
+    expect(contents).toContain("B-diverse");
   });
 });

@@ -6,6 +6,7 @@ import {
   LLMAdapter,
   StorageAdapter,
 } from "../types.js";
+import { PRESETS } from "../presets.js";
 import {
   transition,
   reactivate,
@@ -14,6 +15,7 @@ import {
 } from "../lifecycle/state-machine.js";
 import { runEmbeddingPipeline } from "../embedding/pipeline.js";
 import { EphemeralAdapter } from "../storage/ephemeral-adapter.js";
+import { applyRecencyWeighting, applyMMR } from "../retrieval/reranking.js";
 
 const DEFAULT_COOLING_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
 const DEFAULT_CLOSED_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -110,15 +112,110 @@ async function resolveStorage(config: VitamemConfig): Promise<StorageAdapter> {
  * Create a Vitamem instance — the main entry point for the library.
  */
 export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
+  // Resolve preset values (explicit config values override preset)
+  if (config.preset) {
+    const preset = PRESETS[config.preset];
+    config = {
+      ...config,
+      coolingTimeoutMs: config.coolingTimeoutMs ?? preset.coolingTimeoutMs,
+      dormantTimeoutMs: config.dormantTimeoutMs ?? preset.dormantTimeoutMs,
+      closedTimeoutMs: config.closedTimeoutMs ?? preset.closedTimeoutMs,
+    };
+  }
+
   const llm = await resolveLLM(config);
   const storage = await resolveStorage(config);
   const coolingTimeoutMs =
     config.coolingTimeoutMs ?? DEFAULT_COOLING_TIMEOUT_MS;
+  const dormantTimeoutMs =
+    config.dormantTimeoutMs ?? coolingTimeoutMs;
   const closedTimeoutMs =
     config.closedTimeoutMs ?? DEFAULT_CLOSED_TIMEOUT_MS;
   const embeddingConcurrency =
     config.embeddingConcurrency ?? DEFAULT_EMBEDDING_CONCURRENCY;
   const autoRetrieve = config.autoRetrieve ?? false;
+  const minScore = config.minScore ?? 0;
+  const recencyWeight = config.recencyWeight ?? 0;
+  const recencyMaxAgeMs = config.recencyMaxAgeMs ?? 90 * 24 * 60 * 60 * 1000;
+  const diversityWeight = config.diversityWeight ?? 0;
+  const onRetrieve = config.onRetrieve;
+
+  /**
+   * Full retrieval pipeline:
+   * 1. getPinnedMemories(userId)
+   * 2. searchMemories(userId, embedding) with optional filterTags
+   * 3. Remove from vectorResults any that match pinned by id
+   * 4. Apply minScore filter to vectorResults
+   * 5. Apply recency weighting (if recencyWeight > 0)
+   * 6. Apply MMR (if diversityWeight > 0)
+   * 7. Merge: [...pinned, ...vectorResults]
+   * 8. Pass through onRetrieve hook (if provided)
+   * 9. Return final results
+   */
+  async function runRetrievalPipeline(
+    userId: string,
+    embedding: number[],
+    limit: number = 10,
+    filterTags?: string[],
+    query?: string,
+  ): Promise<MemoryMatch[]> {
+    // 1. Get pinned memories
+    let pinnedMatches: MemoryMatch[] = [];
+    if (storage.getPinnedMemories) {
+      const pinned = await storage.getPinnedMemories(userId);
+      pinnedMatches = pinned.map((m) => ({
+        content: m.content,
+        source: m.source,
+        score: 1.0, // pinned always have max relevance
+        id: m.id,
+        createdAt: m.createdAt,
+        pinned: true,
+        tags: m.tags,
+        embedding: m.embedding ?? undefined,
+      }));
+    }
+
+    // 2. Vector search with optional tag filtering
+    // When MMR is active, fetch more candidates to allow diversity selection
+    const searchLimit = diversityWeight > 0 ? limit * 5 : limit;
+    let vectorResults = await storage.searchMemories(
+      userId,
+      embedding,
+      searchLimit,
+      filterTags,
+    );
+
+    // 3. Remove from vectorResults any that match pinned by id
+    const pinnedIds = new Set(pinnedMatches.map((m) => m.id).filter(Boolean));
+    if (pinnedIds.size > 0) {
+      vectorResults = vectorResults.filter((r) => !r.id || !pinnedIds.has(r.id));
+    }
+
+    // 4. Apply minScore filter (only on non-pinned results)
+    if (minScore > 0) {
+      vectorResults = vectorResults.filter((r) => r.score >= minScore);
+    }
+
+    // 5. Apply recency weighting (if recencyWeight > 0)
+    if (recencyWeight > 0) {
+      vectorResults = applyRecencyWeighting(vectorResults, recencyWeight, recencyMaxAgeMs);
+    }
+
+    // 6. Apply MMR diversity (if diversityWeight > 0)
+    if (diversityWeight > 0) {
+      vectorResults = applyMMR(vectorResults, diversityWeight, limit);
+    }
+
+    // 7. Merge: pinned first, then vector results
+    let results = [...pinnedMatches, ...vectorResults];
+
+    // 8. Pass through onRetrieve hook
+    if (onRetrieve) {
+      results = await onRetrieve(results, query ?? "");
+    }
+
+    return results;
+  }
 
   return {
     async createThread({ userId }) {
@@ -128,6 +225,13 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
     async chat({ threadId, message, systemPrompt }) {
       const thread = await storage.getThread(threadId);
       if (!thread) throw new Error(`Thread not found: ${threadId}`);
+
+      // Dormant/closed thread guard: auto-create new thread and redirect
+      if (thread.state === "dormant" || thread.state === "closed") {
+        const newThread = await storage.createThread(thread.userId);
+        const result = await this.chat({ threadId: newThread.id, message, systemPrompt });
+        return { ...result, thread: newThread, previousThreadId: thread.id, redirected: true };
+      }
 
       // Reactivate if cooling
       let current = thread;
@@ -147,9 +251,12 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       let retrievedMemories: MemoryMatch[] | undefined;
       if (autoRetrieve) {
         const queryEmbedding = await llm.embed(message);
-        retrievedMemories = await storage.searchMemories(
+        retrievedMemories = await runRetrievalPipeline(
           current.userId,
           queryEmbedding,
+          10,
+          undefined,
+          message,
         );
         if (retrievedMemories.length > 0) {
           const memoryContext = retrievedMemories
@@ -189,13 +296,31 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       return { reply, thread: current, memories: retrievedMemories };
     },
 
-    async retrieve({ userId, query, limit }) {
+    async retrieve({ userId, query, limit, filterTags }) {
       const queryEmbedding = await llm.embed(query);
-      return storage.searchMemories(userId, queryEmbedding, limit);
+      return runRetrievalPipeline(userId, queryEmbedding, limit, filterTags, query);
     },
 
     async getThread(threadId) {
       return storage.getThread(threadId);
+    },
+
+    async pinMemory(memoryId) {
+      if (!storage.updateMemory) {
+        throw new Error(
+          "pinMemory() requires a storage adapter that implements updateMemory().",
+        );
+      }
+      await storage.updateMemory(memoryId, { pinned: true });
+    },
+
+    async unpinMemory(memoryId) {
+      if (!storage.updateMemory) {
+        throw new Error(
+          "unpinMemory() requires a storage adapter that implements updateMemory().",
+        );
+      }
+      await storage.updateMemory(memoryId, { pinned: false });
     },
 
     async triggerDormantTransition(threadId) {
@@ -260,7 +385,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       // Cooling → Dormant (run embedding pipeline)
       const coolingThreads = await storage.getThreadsByState("cooling");
       for (const thread of coolingThreads) {
-        if (shouldGoDormant(thread, coolingTimeoutMs)) {
+        if (shouldGoDormant(thread, dormantTimeoutMs)) {
           const dormant = transition(thread, "dormant");
           await storage.updateThread(dormant);
 
@@ -305,6 +430,26 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         );
       }
       await storage.deleteUserMemories(userId);
+    },
+
+    async getOrCreateThread(userId) {
+      if (storage.getLatestActiveThread) {
+        const existing = await storage.getLatestActiveThread(userId);
+        if (existing) {
+          if (existing.state === "cooling") {
+            const reactivated = reactivate(existing);
+            await storage.updateThread(reactivated);
+            return reactivated;
+          }
+          return existing;
+        }
+      }
+      return storage.createThread(userId);
+    },
+
+    async chatWithUser({ userId, message, systemPrompt }) {
+      const thread = await this.getOrCreateThread(userId);
+      return this.chat({ threadId: thread.id, message, systemPrompt });
     },
   };
 }

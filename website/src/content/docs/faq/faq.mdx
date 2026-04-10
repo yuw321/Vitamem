@@ -1,0 +1,461 @@
+---
+title: "Frequently Asked Questions"
+description: "Common questions about Vitamem's behavior, architecture, and integration."
+sidebar:
+  order: 1
+---
+
+## How Vitamem Works
+
+**What happens when a user sends a message?**
+
+The `chat()` flow proceeds through these steps:
+
+1. Look up the thread by `threadId`
+2. If the thread is **dormant** or **closed**, auto-create a new thread for the same user, redirect the message there, and return `redirected: true` along with `previousThreadId`
+3. If the thread is **cooling**, reactivate it back to **active** automatically
+4. Store the user message via `addMessage(threadId, "user", message)`
+5. If `autoRetrieve` is enabled, embed the user message and search memories, injecting matches as a system-level context message
+6. Call the LLM with: system prompt (if provided) + retrieved memory context + full thread message history
+7. Store the assistant reply via `addMessage(threadId, "assistant", reply)`
+8. Update the thread's `lastMessageAt` and `updatedAt` timestamps
+
+For the simplest integration, `chatWithUser()` wraps `getOrCreateThread()` + `chat()` so you never need to manage thread IDs yourself.
+
+**When does embedding occur in the thread lifecycle?**
+
+Embedding happens **only** at the dormant transition — never during active chat. When a thread transitions from cooling to dormant (via `sweepThreads()` or `triggerDormantTransition()`), the full embedding pipeline runs:
+
+1. **Extract** — `llm.extractMemories(messages)` processes the full conversation once
+2. **Embed** — Each extracted fact is individually sent to `llm.embed(factText)`
+3. **Deduplicate** — Cosine similarity at threshold 0.92 against existing user memories
+4. **Save** — Only novel facts are persisted
+
+This batched approach avoids redundant embedding calls during conversation.
+
+**What are the four lifecycle states and why do they exist?**
+
+| State | Purpose |
+|-------|--------|
+| **Active** | Live session — messages are being exchanged |
+| **Cooling** | Gap between sessions — auto-reactivates if user returns |
+| **Dormant** | Facts extracted and embedded — conversation is complete |
+| **Closed** | Archived — terminal state, no further interaction |
+
+These states mirror natural care relationship patterns: a session starts, pauses, concludes, and eventually archives.
+
+**What triggers a thread to move between states?**
+
+`sweepThreads()` checks three timeout thresholds:
+
+- **Active → Cooling**: `coolingTimeoutMs` since last message (default: 6 hours)
+- **Cooling → Dormant**: `dormantTimeoutMs` since cooling started (default: same as `coolingTimeoutMs`)
+- **Dormant → Closed**: `closedTimeoutMs` since dormant timestamp (default: 30 days)
+
+You can also trigger transitions explicitly via `triggerDormantTransition(threadId)` or `closeThread(threadId)`.
+
+**What happens if a user sends a message while the thread is cooling?**
+
+The thread auto-reactivates to **Active**. No manual intervention is needed — `chat()` calls `reactivate()` internally when it detects a cooling thread.
+
+**Can I manually trigger state transitions instead of using sweepThreads()?**
+
+Yes. Two explicit methods are available:
+
+```ts
+await vm.triggerDormantTransition(threadId); // active/cooling → dormant (runs embedding pipeline)
+await vm.closeThread(threadId);              // dormant → closed
+```
+
+## Data Flow and LLM Communication
+
+**What context gets sent to my LLM provider during the embedding process?**
+
+Each extracted fact is sent individually to `llm.embed()`. Only the fact text is embedded — not the full conversation history.
+
+**What information is sent to the LLM before a thread transitions to dormant state for memory extraction?**
+
+The full conversation history is sent once to `llm.extractMemories(messages)`. This is the only time the complete message history leaves your application for extraction purposes.
+
+**What data does the LLM see during a normal chat() call?**
+
+The LLM receives, in order:
+
+1. Retrieved memory context (if `autoRetrieve` is enabled) — formatted as a system message
+2. Your custom `systemPrompt` (if provided)
+3. Full thread message history (all user + assistant messages)
+
+**Does Vitamem send data to any third-party services it controls?**
+
+No. Zero telemetry, zero phone-home. All data flows exclusively between your application, your chosen LLM provider, and your chosen storage backend.
+
+**What is the format of data stored in the memory store?**
+
+Each memory record contains:
+
+```ts
+{
+  id: string;          // unique identifier
+  userId: string;      // scoped to user
+  threadId: string;    // source thread
+  content: string;     // the extracted fact
+  source: "confirmed" | "inferred";
+  embedding: number[] | null;
+  createdAt: Date;
+  pinned?: boolean;    // always included in retrieval if true
+  tags?: string[];     // e.g. ["medication", "condition"]
+}
+```
+
+## Efficiency and Cost
+
+**How is this approach more efficient than traditional memory systems?**
+
+A naive system that embeds every message generates one `embed()` call per message. A 50-message session = 50 embedding calls. Vitamem batches extraction at the dormant transition, typically extracting 5-10 facts from that same session — resulting in roughly 5-8 LLM calls (1 extraction + embeddings) instead of 50.
+
+**Why not just embed every message as it arrives?**
+
+Raw messages contain noise: greetings, filler, repeated context, clarifications. Vitamem's extraction step distills a conversation down to the 5-10 facts that actually matter, producing higher-quality memory with fewer embedding calls.
+
+**What are the actual cost savings?**
+
+For a typical 50-message session yielding 6 extracted facts:
+- **Naive**: 50 embed calls
+- **Vitamem**: 1 extraction call + 6 embed calls = ~7 calls (~8x fewer)
+- Deduplication removes an additional 30-50% of redundant facts across sessions
+
+**What is the latency impact of autoRetrieve?**
+
+Approximately 60-120ms per chat turn, consisting of one `llm.embed()` call for the user message plus one `searchMemories()` call against the storage backend.
+
+**How does the embedding pipeline handle rate limits?**
+
+The pipeline uses bounded concurrency — up to 5 simultaneous embedding calls by default. Configure via `embeddingConcurrency` in your config:
+
+```ts
+const vm = await createVitamem({
+  // ...
+  embeddingConcurrency: 3, // reduce if hitting rate limits
+});
+```
+
+## Memory and Retrieval
+
+**Is there a single memory file per user?**
+
+No. Vitamem uses a relational model with three entities — **Threads**, **Messages**, and **Memories** — all scoped by `userId`. A user can have many threads, each thread has many messages, and dormant transitions produce memories linked to both the user and the source thread.
+
+**How does memory retrieval work?**
+
+The retrieval pipeline executes in order:
+
+1. Fetch **pinned memories** (always included, score = 1.0)
+2. **Vector search** via `searchMemories()` with optional `filterTags`
+3. Remove duplicates (any vector results already in pinned set)
+4. Apply **minScore** filter (discard below threshold)
+5. Apply **recency weighting** (blend cosine similarity with time-decay)
+6. Apply **MMR diversity** (Maximal Marginal Relevance to reduce redundancy)
+7. Merge: `[...pinned, ...vectorResults]`
+8. Pass through **onRetrieve** hook (custom filtering/re-ranking)
+
+**What is autoRetrieve?**
+
+When enabled, each `chat()` call automatically embeds the user's message, searches the user's memories, and injects matching context as a system message before calling the LLM:
+
+```ts
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  autoRetrieve: true,
+});
+```
+
+**How does deduplication work?**
+
+When new facts are extracted, each is compared against existing user memories using cosine similarity. Facts with similarity ≥ 0.92 to an existing memory are considered duplicates and discarded.
+
+**What happens to messages after memory extraction?**
+
+Raw messages remain stored as an audit trail. They are not re-processed on subsequent dormant transitions — only the originating thread's messages are used for extraction.
+
+**Can memories from one thread appear in another?**
+
+Yes. Memories are **user-scoped**, not thread-scoped. Once extracted, a memory is available across all of a user's threads during retrieval.
+
+**What is confirmed vs inferred source?**
+
+- **confirmed** — The user stated this fact directly (e.g., "I take metformin daily")
+- **inferred** — Derived from assistant reasoning or conversation context (e.g., the assistant noted a pattern)
+
+The LLM extraction step assigns the source label during `extractMemories()`.
+
+**What are pinned memories?**
+
+Pinned memories are **always** included in retrieval results regardless of similarity score. Use them for critical context that must never be missed — such as drug allergies or chronic conditions.
+
+```ts
+await vm.pinMemory(memoryId);   // mark as pinned
+await vm.unpinMemory(memoryId); // unpin
+```
+
+**How does the onRetrieve hook work?**
+
+`onRetrieve` is a custom callback that receives the final retrieval results and the original query after the full pipeline has run. You can filter, re-rank, augment, or log before the memories are injected into the LLM context:
+
+```ts
+const vm = await createVitamem({
+  // ...
+  onRetrieve: (memories, query) => {
+    // Example: filter out low-confidence inferred memories
+    return memories.filter(m => m.source === "confirmed" || m.score > 0.8);
+  },
+});
+```
+
+**How does tag filtering work?**
+
+Memories can be tagged during extraction (e.g., `"medication"`, `"condition"`, `"lifestyle"`). Use `filterTags` in `retrieve()` to scope searches to specific categories:
+
+```ts
+const meds = await vm.retrieve({
+  userId: "user-1",
+  query: "current medications",
+  filterTags: ["medication"],
+});
+```
+
+## Thread Management and Session Design
+
+**How do I know when to start a new thread or reuse an existing one?**
+
+Use `chatWithUser()` for automatic handling — it calls `getOrCreateThread()` internally and returns an active or reactivated thread, or creates a new one. For more control, call `getOrCreateThread()` + `chat()` explicitly.
+
+**What determines when a new thread should be created vs continuing?**
+
+`getOrCreateThread(userId)` checks for an existing active or cooling thread via `getLatestActiveThread()`. If found and cooling, it reactivates. If found and active, it returns it. Otherwise, it creates a new thread.
+
+**How does the system decide when to transition between states?**
+
+`sweepThreads()` runs three passes:
+
+1. Active threads where `lastMessageAt` exceeds `coolingTimeoutMs` → transition to **cooling**
+2. Cooling threads where `coolingStartedAt` exceeds `dormantTimeoutMs` → transition to **dormant** (+ run embedding pipeline)
+3. Dormant threads where `dormantAt` exceeds `closedTimeoutMs` → transition to **closed**
+
+You can also call `triggerDormantTransition()` or `closeThread()` directly.
+
+**What are the criteria for determining when a session has ended?**
+
+Time-based inactivity (configured via `coolingTimeoutMs` and `dormantTimeoutMs`) or explicit API calls like `triggerDormantTransition(threadId)`.
+
+**How does the system handle multiple simultaneous conversations?**
+
+Each thread is independent. Multiple active threads per user are fully supported — they each follow their own lifecycle independently.
+
+**What happens if a user starts a new conversation while one is active?**
+
+Create a new thread. The existing active thread continues its lifecycle independently and will eventually cool → go dormant → close based on timeout settings.
+
+**Should I store the threadId in my session?**
+
+With `chatWithUser()`, no — it manages thread selection automatically based on `userId`. With the explicit `getOrCreateThread()` + `chat()` API, yes — you should store and reuse the `threadId` for the duration of the session.
+
+**What happens if I call chat() on a dormant or closed thread?**
+
+A new thread is auto-created for the same user, the message is redirected there, and the response includes `redirected: true` and `previousThreadId` pointing to the original thread.
+
+```ts
+const result = await vm.chat({ threadId: dormantThreadId, message: "Hello" });
+// result.redirected === true
+// result.previousThreadId === dormantThreadId
+// result.thread.id === newThreadId
+```
+
+**Can I reopen a closed thread?**
+
+No. **Closed** is a terminal state with no valid transitions. Create a new thread for the same user instead — their memories are user-scoped and will still be available via retrieval.
+
+**How many threads can a user accumulate?**
+
+There is no hard limit. Deduplication keeps memory growth bounded across threads, so accumulated memories remain manageable even with many sessions.
+
+**What are the recommended timeout configurations?**
+
+Vitamem provides named presets via the `preset` config option:
+
+| Preset | Cooling | Dormant | Closed |
+|--------|---------|---------|--------|
+| `daily-checkin` | 2 hours | 30 minutes | 7 days |
+| `weekly-therapy` | 24 hours | 6 hours | 90 days |
+| `on-demand` | 30 minutes | 15 minutes | 30 days |
+| `long-term` | 12 hours | 6 hours | 365 days |
+
+```ts
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  preset: "weekly-therapy",
+});
+```
+
+Explicit `coolingTimeoutMs`, `dormantTimeoutMs`, and `closedTimeoutMs` values override preset defaults.
+
+**What's the simplest way to integrate Vitamem?**
+
+Three lines:
+
+```ts
+import { createVitamem } from "vitamem";
+
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  preset: "daily-checkin",
+  autoRetrieve: true,
+});
+
+// Chat — thread management is automatic
+const { reply } = await vm.chatWithUser({
+  userId: "user-1",
+  message: "How are you feeling today?",
+});
+
+// Schedule sweepThreads() to run periodically (e.g., every 5 minutes)
+setInterval(() => vm.sweepThreads(), 5 * 60 * 1000);
+```
+
+## Architecture and Scalability
+
+**What storage backends are supported?**
+
+Two built-in adapters:
+
+- **EphemeralAdapter** — In-memory, for development and testing
+- **SupabaseAdapter** — Production-ready, backed by Supabase (Postgres + pgvector)
+
+You can implement the `StorageAdapter` interface for any custom backend (Redis, MongoDB, SQLite, etc.).
+
+**How does sweepThreads() work?**
+
+It runs three sequential passes over all threads:
+
+1. **Active → Cooling** — threads exceeding `coolingTimeoutMs` since last message
+2. **Cooling → Dormant** — threads exceeding `dormantTimeoutMs` since cooling started; triggers the full extract-embed-dedup-save pipeline for each
+3. **Dormant → Closed** — threads exceeding `closedTimeoutMs` since going dormant
+
+Call it on a schedule (e.g., via `setInterval` or a cron job).
+
+**Can Vitamem handle high-concurrency?**
+
+Yes. The embedding pipeline uses bounded concurrency (default 5, configurable). User memory stores are isolated by `userId`, so concurrent operations for different users do not conflict.
+
+**What happens if sweepThreads() is interrupted?**
+
+Each thread transition is independent. If the process crashes mid-sweep, the next invocation picks up any remaining threads that still meet the timeout criteria.
+
+**How does Vitamem perform at scale?**
+
+User stores are isolated by `userId`, so performance scales horizontally. Key factors to monitor:
+
+- Number of memories per user (affects search time)
+- Concurrent dormant transitions (affects LLM API load)
+- Storage adapter choice (Supabase/pgvector is optimized for vector search)
+
+**Can I use Vitamem without Supabase?**
+
+Yes. Implement the `StorageAdapter` interface for any backend. The interface defines methods like `createThread()`, `searchMemories()`, `saveMemory()`, etc. — see the API reference for the full contract.
+
+## Privacy, Security, and Health Compliance
+
+**Is Vitamem a medical device?**
+
+No. Vitamem is a developer library for building applications with persistent memory. It is not a medical device and makes no clinical claims.
+
+**What about HIPAA/GDPR compliance?**
+
+Vitamem provides building blocks for compliance:
+
+- `deleteUserData(userId)` — Removes all user memories for right-to-erasure requests
+- `deleteMemory(memoryId)` — Removes individual memories
+
+Compliance is ultimately **your application's responsibility** — Vitamem provides the APIs, but you must implement appropriate policies, access controls, and audit trails.
+
+**How should I handle PHI?**
+
+Your LLM provider and storage backend are your responsibility. Review your provider's data processing agreements and ensure your storage backend meets your compliance requirements. See `SECURITY.md` for guidance.
+
+**How does the system handle sensitive health information?**
+
+Data flows through two channels that you control:
+
+1. **LLM provider** — receives messages for chat, extraction, and embedding
+2. **Storage backend** — persists threads, messages, and memories
+
+Vitamem itself does not store, transmit, or process data outside these two channels.
+
+**How does the system ensure privacy compliance?**
+
+- **User-scoped isolation** — all data is partitioned by `userId`
+- **`deleteUserData(userId)`** — complete erasure of all user memories
+- **`deleteMemory(memoryId)`** — granular memory removal
+- No cross-user data access by design
+
+**Does Vitamem encrypt data?**
+
+No. Encryption is the storage backend's responsibility. Supabase provides encryption at rest by default. For custom adapters, implement encryption at your storage layer.
+
+**Can I audit stored data?**
+
+Yes. Use `retrieve()` to search memories programmatically, or access the storage adapter directly for full enumeration via `getMemories(userId)`.
+
+## Comparisons and Positioning
+
+**How does Vitamem compare to mem0?**
+
+mem0 uses a **utility pattern** — discrete `add()` and `search()` operations where each `add()` triggers immediate extraction and embedding. Vitamem offers two modes:
+
+- **Intermediary mode** (`chatWithUser()`) — handles thread management, LLM calls, and memory automatically
+- **Utility mode** (`retrieve()` + your own LLM) — use Vitamem purely for memory storage and retrieval
+
+Key difference: mem0 extracts per-add (higher cost, immediate availability). Vitamem batches extraction at the dormant transition (lower cost, delayed availability). Vitamem is purpose-built for health and care relationship workflows.
+
+**Can I use Vitamem without the intermediary pattern?**
+
+Yes. Utility mode gives you full control:
+
+```ts
+const vm = await createVitamem({ /* ... */ });
+
+// Create and manage threads yourself
+const thread = await vm.createThread({ userId: "user-1" });
+
+// Retrieve memories to inject into your own LLM call
+const memories = await vm.retrieve({
+  userId: "user-1",
+  query: "patient medications",
+});
+
+// Call your own LLM with the retrieved context
+const response = await myLLM.chat([
+  { role: "system", content: formatMemories(memories) },
+  { role: "user", content: userMessage },
+]);
+```
+
+**Why would I choose Vitamem over other memory libraries?**
+
+1. **Thread lifecycle mirrors clinical workflows** — active, cooling, dormant, closed states map naturally to care sessions
+2. **Batch extraction at dormant saves 85-90% embedding costs** — vs. per-message embedding
+3. **Confirmed/inferred source distinction** — know whether a fact came directly from the user or was derived
+4. **Pinned memories for critical health context** — allergies, conditions, and medications are never missed
+5. **Health compliance building blocks** — `deleteUserData()`, `deleteMemory()`, user-scoped isolation
+
+**Does Vitamem act as an intermediary?**
+
+It can but doesn't have to. Two first-class, fully documented patterns:
+
+- **Simple mode** — `chatWithUser()` handles everything: thread management, LLM communication, memory retrieval, and response generation
+- **Utility mode** — `retrieve()` + your own LLM gives you full control over the conversation while still leveraging Vitamem's memory pipeline

@@ -1,0 +1,150 @@
+---
+title: "Auto-Retrieve"
+description: "How autoRetrieve automatically injects relevant memories into every chat message."
+sidebar:
+  order: 4
+---
+
+# Auto-Retrieve
+
+When `autoRetrieve` is enabled, Vitamem automatically searches the user's memory store on every `chat()` call and injects relevant memories as a system message before sending the conversation to the LLM. This means your application does not need to call `retrieve()` or build memory-aware system prompts manually.
+
+## How It Works
+
+With `autoRetrieve: true`, every call to `chat()` performs these additional steps:
+
+1. **Embed the user's message** -- Vitamem calls `llm.embed(message)` to get a vector representation of what the user just said.
+2. **Search memories** -- The embedding is used to search the user's memory store via `storage.searchMemories()`, returning the most semantically similar facts.
+3. **Inject as system message** -- If any memories are found, Vitamem prepends a system message to the conversation with the format:
+
+```
+Relevant context from previous sessions:
+- Has Type 2 diabetes (confirmed)
+- Takes metformin 500mg twice daily (confirmed)
+- Prefers morning check-ins (inferred)
+```
+
+4. **Return memories for transparency** -- The `chat()` response includes a `memories` field containing the `MemoryMatch[]` that were injected, so your application can log or display them.
+
+## Enabling Auto-Retrieve
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: "ephemeral",
+  autoRetrieve: true, // default: false
+});
+```
+
+## Using It
+
+```typescript
+const { reply, thread, memories } = await mem.chat({
+  threadId: thread.id,
+  message: "How should I adjust my diet?",
+});
+
+// `memories` contains what was injected
+if (memories && memories.length > 0) {
+  console.log("Context injected:");
+  for (const m of memories) {
+    console.log(`  - ${m.content} (${m.source}, score: ${m.score.toFixed(2)})`);
+  }
+}
+```
+
+The `memories` field is only present when `autoRetrieve` is enabled. When disabled, it is `undefined`.
+
+## Auto-Retrieve vs Manual Retrieve
+
+There are two patterns for getting memories into your LLM context. Each has trade-offs.
+
+### Auto-Retrieve (`autoRetrieve: true`)
+
+```typescript
+// Just call chat() -- memories are injected automatically
+const { reply, memories } = await mem.chat({
+  threadId: thread.id,
+  message: userMessage,
+});
+```
+
+**Advantages:**
+- Zero boilerplate -- works out of the box
+- Every message gets relevant context, even mid-conversation
+- The injected system message format is consistent
+
+**Trade-offs:**
+- One extra embedding API call per `chat()` call (the user's message must be embedded to search)
+- You cannot customize which memories are injected or how they are formatted
+- The search query is always the raw user message, which may not be the best retrieval query for every situation
+
+### Manual Retrieve (`retrieve()` + `systemPrompt`)
+
+```typescript
+// 1. Retrieve memories with a custom query
+const memories = await mem.retrieve({
+  userId,
+  query: "medications health conditions current treatment",
+  limit: 5,
+});
+
+// 2. Format however you want
+const context = memories
+  .filter((m) => m.score > 0.7) // custom threshold
+  .map((m) => `${m.content}`)
+  .join("\n");
+
+// 3. Inject via systemPrompt
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: userMessage,
+  systemPrompt: `Patient context:\n${context}\n\nRespond as a caring health companion.`,
+});
+```
+
+**Advantages:**
+- Full control over the retrieval query (can be different from the user's message)
+- Custom filtering (score thresholds, source filtering, topic-specific queries)
+- Custom formatting of the injected context
+- Can retrieve once per session instead of once per message
+
+**Trade-offs:**
+- More code to write and maintain
+- You must remember to retrieve and inject on every relevant interaction
+
+## When to Use Each
+
+| Scenario | Recommendation |
+|----------|---------------|
+| Prototyping or simple chat apps | `autoRetrieve: true` |
+| Health companion with topic-specific queries | Manual `retrieve()` |
+| High-volume API with cost concerns | Manual `retrieve()` (retrieve once per session, not per message) |
+| Multi-turn conversation where context matters throughout | `autoRetrieve: true` |
+| You need to filter by memory source (`confirmed` only) | Manual `retrieve()` |
+| You want the simplest possible integration | `autoRetrieve: true` |
+
+## Combining Both
+
+You can enable `autoRetrieve` and still pass a `systemPrompt`. Both will be included. The auto-retrieved memories are injected as the first system message, followed by your custom system prompt:
+
+```typescript
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: "What about my exercise routine?",
+  systemPrompt: "You are a supportive health companion. Be warm and encouraging.",
+});
+
+// The LLM sees:
+// 1. System: "Relevant context from previous sessions: ..." (auto-injected)
+// 2. System: "You are a supportive health companion. ..." (your prompt)
+// 3. User/assistant message history
+// 4. User: "What about my exercise routine?"
+```
+
+## Performance Considerations
+
+Each `chat()` call with `autoRetrieve` makes one additional API call to your embedding provider (`llm.embed()`). For OpenAI's `text-embedding-3-small`, this adds roughly 10-50ms of latency and costs $0.00002 per call (as of early 2026).
+
+If latency or cost is a concern, prefer the manual approach: call `retrieve()` once when the session starts and pass the result as `systemPrompt` for all subsequent messages in that session.

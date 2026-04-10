@@ -1,4 +1,6 @@
 export { createVitamem } from "./facade/create-vitamem.js";
+export { PRESETS } from "./presets.js";
+export type { PresetName } from "./presets.js";
 export {
   canTransition,
   transition,
@@ -11,7 +13,10 @@ export {
   extractMemories,
   extractFactsSimple,
   classifySource,
+  classifyTags,
+  MEMORY_TAGS,
 } from "./memory/extraction.js";
+export type { MemoryTag } from "./memory/extraction.js";
 export {
   cosineSimilarity,
   isDuplicate,
@@ -19,6 +24,10 @@ export {
   deduplicateFacts,
 } from "./memory/deduplication.js";
 export { runEmbeddingPipeline } from "./embedding/pipeline.js";
+export {
+  applyRecencyWeighting,
+  applyMMR,
+} from "./retrieval/reranking.js";
 export { EphemeralAdapter } from "./storage/ephemeral-adapter.js";
 export { SupabaseAdapter } from "./storage/supabase-adapter.js";
 

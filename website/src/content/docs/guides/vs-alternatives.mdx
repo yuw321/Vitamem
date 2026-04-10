@@ -1,0 +1,99 @@
+---
+title: "Vitamem vs. Alternatives"
+description: "How Vitamem compares to Mem0, Zep, Letta, and LangChain Memory."
+sidebar:
+  order: 5
+---
+
+# Vitamem vs. Alternatives
+
+## Summary
+
+| | Vitamem | Mem0 | Zep | Letta |
+|--|---------|------|-----|-------|
+| **Health-specific design** | ✅ Yes | ❌ General purpose | ❌ General purpose | ❌ General purpose |
+| **Thread lifecycle states** | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| **Embedding cost model** | Once at dormant | Per-message or periodic | Knowledge graph | Per-memory block |
+| **Zero production deps** | ✅ Yes | ❌ Many | ❌ Many | ❌ Many |
+| **TypeScript-native** | ✅ Yes | Python-first | Python + TS | Python-first |
+| **Self-hosted** | ✅ Always | Optional | Optional | Yes |
+| **HIPAA-friendly architecture** | ✅ Lifecycle = less processing | ❌ No | Paid tier only | ❌ No |
+
+---
+
+## Vitamem vs. Mem0
+
+[Mem0](https://github.com/mem0ai/mem0) is the most popular open-source AI memory library (51k+ stars). It's excellent for general-purpose AI personalization.
+
+**Choose Vitamem if:**
+- You're building a health companion or counseling AI
+- You want the conversation lifecycle to match clinical patterns (sessions, breaks, discharge)
+- You need TypeScript-native with zero production dependencies
+- You want embeddings computed at natural rest points, not continuously
+
+**Choose Mem0 if:**
+- You need Python support or a hosted API
+- You're building a general-purpose AI assistant (not health-specific)
+- You need multi-level memory (agent/session/user)
+- Community size and integrations are important (Mem0 has LangGraph, CrewAI, etc.)
+
+---
+
+## Vitamem vs. Zep
+
+[Zep](https://github.com/getzep/zep) uses temporal knowledge graphs (via Graphiti) for context engineering. It's powerful for relationship-aware retrieval.
+
+**Choose Vitamem if:**
+- You want a simpler architecture without knowledge graph complexity
+- The thread lifecycle states match your workflow
+- You need TypeScript-native with no external service dependencies
+- You want health-specific documentation and patterns out of the box
+
+**Choose Zep if:**
+- You need relationship-aware context (entity graphs, temporal reasoning)
+- You need HIPAA compliance today (Zep Cloud has it)
+- Your use case requires tracking relationships between entities, not just facts about a user
+- You need sub-200ms latency at scale
+
+---
+
+## Vitamem vs. Letta (MemGPT)
+
+[Letta](https://github.com/letta-ai/letta) (formerly MemGPT) builds stateful AI agents with configurable memory blocks that evolve over time.
+
+**Choose Vitamem if:**
+- You want a memory library, not a full agent framework
+- Your application is already built and you need to add memory
+- You want the simplicity of a thread-based lifecycle
+- You're working in TypeScript
+
+**Choose Letta if:**
+- You're building agents from scratch and want a full framework
+- You need agents that can manage their own memory (self-editing memory blocks)
+- You want a UI/ADE for inspecting and managing agent state
+- Python is your primary language
+
+---
+
+## Vitamem vs. LangChain Memory
+
+LangChain's memory modules (ConversationBufferMemory, ConversationSummaryMemory, etc.) are simple utilities within the LangChain framework.
+
+**Choose Vitamem if:**
+- You need persistent memory across sessions (LangChain memory is typically in-process)
+- You need semantic retrieval (embedding + cosine similarity), not just buffer/summary
+- You want lifecycle management (cooling/dormant/closed)
+- You're not using LangChain
+
+**Choose LangChain Memory if:**
+- You're already deep in the LangChain ecosystem
+- You only need within-session memory
+- Simplicity and zero setup is the priority
+
+---
+
+## The Core Difference
+
+Every alternative was built for general-purpose AI. Vitamem is the only open-source memory library designed around the specific patterns of health and care relationships:
+
+> A therapy session has a beginning and end. There's a cooling-off period between appointments. Months might pass. Then the user returns. Vitamem's lifecycle states map directly to this pattern — and that makes it the natural choice for health AI.

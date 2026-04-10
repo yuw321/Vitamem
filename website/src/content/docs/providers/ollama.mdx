@@ -1,0 +1,213 @@
+---
+title: "Ollama"
+description: "Run Vitamem with local models via Ollama -- fully offline, zero config."
+sidebar:
+  order: 3
+---
+
+## Installation
+
+Install Vitamem and the OpenAI peer dependency. The Ollama adapter is a thin wrapper over the OpenAI adapter that points at Ollama's OpenAI-compatible API.
+
+```bash
+npm install vitamem openai
+```
+
+Then install Ollama itself from [ollama.com](https://ollama.com).
+
+## Quick Setup
+
+If Ollama is running locally with default settings, zero configuration is needed:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "ollama",
+  storage: "ephemeral",
+});
+```
+
+No API key required. This uses the default models: **llama3.2** for chat and extraction, **nomic-embed-text** for embeddings, connecting to `http://localhost:11434/v1`.
+
+## Pull the Models
+
+Before using Vitamem with Ollama, pull the default models:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
+
+Ollama must be running when your application starts. Verify it is available:
+
+```bash
+ollama list
+```
+
+## Adapter Factory
+
+For full control, use `createOllamaAdapter`:
+
+```typescript
+import { createOllamaAdapter, createVitamem } from "vitamem";
+
+const llm = createOllamaAdapter({
+  chatModel: "llama3.2",
+  embeddingModel: "nomic-embed-text",
+  baseUrl: "http://localhost:11434/v1",
+});
+
+const mem = await createVitamem({
+  llm,
+  storage: "ephemeral",
+});
+```
+
+### Options
+
+All options are optional. The adapter works with no arguments at all.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `chatModel` | `string` | `"llama3.2"` | Ollama model for chat and memory extraction. |
+| `embeddingModel` | `string` | `"nomic-embed-text"` | Ollama model for text embeddings. |
+| `baseUrl` | `string` | `"http://localhost:11434/v1"` | Ollama server URL. |
+| `extractionPrompt` | `string` | Built-in prompt | Custom prompt for memory extraction. Must include a `{conversation}` placeholder. |
+
+## Recommended Models
+
+### Chat Models
+
+| Model | Size | Notes |
+| --- | --- | --- |
+| `llama3.2` | 3B | Default. Fast, good general quality. |
+| `llama3.2:1b` | 1B | Smallest and fastest, lower extraction accuracy. |
+| `llama3.3` | 70B | High quality, requires significant RAM. |
+| `mistral` | 7B | Good balance of speed and capability. |
+| `gemma2` | 9B | Strong instruction following. |
+| `phi3` | 3.8B | Compact, good at structured output (JSON extraction). |
+
+### Embedding Models
+
+| Model | Dimensions | Notes |
+| --- | --- | --- |
+| `nomic-embed-text` | 768 | Default. Purpose-built embedding model, good quality. |
+| `all-minilm` | 384 | Smaller vectors, faster, slightly lower accuracy. |
+| `mxbai-embed-large` | 1024 | Higher accuracy, larger vectors. |
+
+```typescript
+const llm = createOllamaAdapter({
+  chatModel: "mistral",
+  embeddingModel: "mxbai-embed-large",
+});
+```
+
+:::caution
+If you change the embedding model after memories have been stored, existing
+  embeddings will be in a different vector space. Similarity search will not
+  work correctly across old and new embeddings.
+:::
+
+## Performance: Embedding Concurrency
+
+By default, Vitamem runs up to 5 embedding requests in parallel during the dormant transition pipeline. Ollama processes requests sequentially on most hardware, so parallel requests queue up without a speed benefit and can increase memory pressure.
+
+Set `embeddingConcurrency: 1` when using Ollama:
+
+```typescript
+const mem = await createVitamem({
+  provider: "ollama",
+  storage: "ephemeral",
+  embeddingConcurrency: 1,
+});
+```
+
+Or when using the adapter factory:
+
+```typescript
+import { createOllamaAdapter, createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  llm: createOllamaAdapter(),
+  storage: "ephemeral",
+  embeddingConcurrency: 1,
+});
+```
+
+:::tip
+If you are running Ollama on a machine with multiple GPUs or using a cluster,
+  you can increase `embeddingConcurrency` to match your throughput capacity.
+:::
+
+## Offline Usage
+
+Ollama runs entirely on your machine. Once models are pulled, no internet connection is required. This makes it ideal for:
+
+- **Development and testing** -- no API keys, no costs, no rate limits.
+- **Privacy-sensitive deployments** -- health data never leaves the device.
+- **Air-gapped environments** -- works behind firewalls with no external access.
+- **CI/CD pipelines** -- deterministic tests without API dependencies.
+
+```typescript
+// Complete offline setup
+import { createOllamaAdapter, createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  llm: createOllamaAdapter(),
+  storage: "ephemeral",
+  embeddingConcurrency: 1,
+});
+
+// Everything runs locally -- no network calls
+const thread = await mem.createThread({ userId: "local-user" });
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: "I started taking vitamin D supplements last week.",
+});
+```
+
+## Remote Ollama Server
+
+If Ollama is running on a different machine (e.g., a GPU server on your network), point `baseUrl` to it:
+
+```typescript
+const llm = createOllamaAdapter({
+  baseUrl: "http://192.168.1.50:11434/v1",
+});
+```
+
+## How It Works
+
+Under the hood, `createOllamaAdapter` delegates to `createOpenAIAdapter` with Ollama-specific defaults:
+
+```typescript
+// This:
+createOllamaAdapter({ chatModel: "mistral" });
+
+// Is equivalent to:
+createOpenAIAdapter({
+  apiKey: "ollama",           // Ollama ignores the API key
+  chatModel: "mistral",
+  embeddingModel: "nomic-embed-text",
+  baseUrl: "http://localhost:11434/v1",
+});
+```
+
+This works because Ollama implements the OpenAI-compatible chat completions and embeddings endpoints.
+
+## Troubleshooting
+
+**"Connection refused" errors** -- Make sure Ollama is running. Start it with `ollama serve` or check that the Ollama desktop app is open.
+
+**"Model not found" errors** -- Pull the model first with `ollama pull <model-name>`.
+
+**Slow embedding pipeline** -- Set `embeddingConcurrency: 1` and consider using a smaller embedding model like `all-minilm`.
+
+**Out of memory** -- Use smaller models (`llama3.2:1b` for chat, `all-minilm` for embeddings) or increase your system swap space.
+
+## Next Steps
+
+- [OpenAI Provider](/providers/openai/) -- cloud-hosted models with OpenAI
+- [Anthropic Provider](/providers/anthropic/) -- use Claude for chat
+- [Custom LLM Adapter](/providers/custom-llm-adapter/) -- implement the interface for any provider

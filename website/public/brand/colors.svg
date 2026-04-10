@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400">
+  <defs>
+    <style>
+      .label { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px; fill: #64748b; }
+      .hex { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 14px; fill: #1a1f36; font-weight: 500; }
+      .category { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 16px; fill: #1a1f36; font-weight: 600; }
+    </style>
+  </defs>
+
+  <!-- Title -->
+  <text class="category" x="40" y="35">Primary Palette</text>
+
+  <!-- Deep Navy (Primary) -->
+  <rect x="40" y="55" width="140" height="100" rx="8" fill="#1a1f36" />
+  <text class="hex" x="40" y="180">Deep Navy</text>
+  <text class="label" x="40" y="198">#1a1f36</text>
+  <text class="label" x="40" y="216">Primary / Text / Logo</text>
+
+  <!-- Slate Blue (Accent) -->
+  <rect x="200" y="55" width="140" height="100" rx="8" fill="#5b6b8a" />
+  <text class="hex" x="200" y="180">Slate Blue</text>
+  <text class="label" x="200" y="198">#5b6b8a</text>
+  <text class="label" x="200" y="216">Accent / Links / Cooling</text>
+
+  <!-- Cool Gray (Secondary) -->
+  <rect x="360" y="55" width="140" height="100" rx="8" fill="#8e9ab5" />
+  <text class="hex" x="360" y="180">Cool Gray</text>
+  <text class="label" x="360" y="198">#8e9ab5</text>
+  <text class="label" x="360" y="216">Secondary / Dormant</text>
+
+  <!-- Off-White (Background) -->
+  <rect x="520" y="55" width="140" height="100" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+  <text class="hex" x="520" y="180">Off White</text>
+  <text class="label" x="520" y="198">#f8fafc</text>
+  <text class="label" x="520" y="216">Background</text>
+
+  <!-- Functional Colors -->
+  <text class="category" x="40" y="270">Functional / Lifecycle States</text>
+
+  <!-- Active -->
+  <rect x="40" y="290" width="100" height="60" rx="6" fill="#1a1f36" />
+  <text class="hex" x="40" y="375">Active</text>
+  <text class="label" x="40" y="393">#1a1f36</text>
+
+  <!-- Cooling -->
+  <rect x="160" y="290" width="100" height="60" rx="6" fill="#5b6b8a" />
+  <text class="hex" x="160" y="375">Cooling</text>
+  <text class="label" x="160" y="393">#5b6b8a</text>
+
+  <!-- Dormant -->
+  <rect x="280" y="290" width="100" height="60" rx="6" fill="#8e9ab5" />
+  <text class="hex" x="280" y="375">Dormant</text>
+  <text class="label" x="280" y="393">#8e9ab5</text>
+
+  <!-- Closed -->
+  <rect x="400" y="290" width="100" height="60" rx="6" fill="#cbd5e1" />
+  <text class="hex" x="400" y="375">Closed</text>
+  <text class="label" x="400" y="393">#cbd5e1</text>
+
+  <!-- Success (memory stored) -->
+  <rect x="560" y="290" width="100" height="60" rx="6" fill="#3b7a57" />
+  <text class="hex" x="560" y="375">Stored</text>
+  <text class="label" x="560" y="393">#3b7a57</text>
+</svg>

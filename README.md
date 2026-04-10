@@ -182,13 +182,19 @@ const mem = await createVitamem({
 
 Full documentation at **[vitamem.dev](https://vitamem.dev)** — quickstart, API reference, provider guides, health companion tutorial, and more.
 
+Documentation is built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.build). To preview locally:
+
+```bash
+cd website && npm run dev
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome.
 
 ## Disclaimer
 
-Vitamem is a developer library for memory management, not a medical device. It is not intended to diagnose, treat, cure, or prevent any medical condition. Applications using Vitamem are responsible for their own privacy policies, compliance requirements, and safety disclosures. See [full disclaimer](docs/legal/disclaimer.md).
+Vitamem is a developer library for memory management, not a medical device. It is not intended to diagnose, treat, cure, or prevent any medical condition. Applications using Vitamem are responsible for their own privacy policies, compliance requirements, and safety disclosures. See [full disclaimer](https://vitamem.dev/legal/disclaimer/).
 
 ## License
 

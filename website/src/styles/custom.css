@@ -1,0 +1,42 @@
+/* Vitamem brand colors: teal/slate theme */
+:root {
+  --teal: #0f766e;
+  --teal-lt: #14b8a6;
+  --slate-dk: #0f172a;
+
+  /* Starlight color overrides */
+  --sl-color-accent-low: #0f766e1a;
+  --sl-color-accent: var(--teal);
+  --sl-color-accent-high: var(--teal-lt);
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e2e8f0;
+  --sl-color-gray-2: #cbd5e1;
+  --sl-color-gray-3: #94a3b8;
+  --sl-color-gray-4: #64748b;
+  --sl-color-gray-5: #475569;
+  --sl-color-gray-6: #1e293b;
+  --sl-color-black: var(--slate-dk);
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #0f766e33;
+  --sl-color-accent: var(--teal-lt);
+  --sl-color-accent-high: #ccfbf1;
+  --sl-color-white: #f8fafc;
+  --sl-color-gray-1: #334155;
+  --sl-color-gray-2: #475569;
+  --sl-color-gray-3: #64748b;
+  --sl-color-gray-4: #94a3b8;
+  --sl-color-gray-5: #cbd5e1;
+  --sl-color-gray-6: #e2e8f0;
+  --sl-color-black: var(--slate-dk);
+}
+
+/* Link styling */
+a {
+  --sl-color-text-accent: var(--teal);
+}
+
+:root[data-theme='dark'] a {
+  --sl-color-text-accent: var(--teal-lt);
+}

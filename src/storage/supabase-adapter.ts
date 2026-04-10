@@ -24,6 +24,9 @@ export interface SupabaseQueryBuilder {
   eq(column: string, value: unknown): SupabaseQueryBuilder;
   order(column: string, opts?: { ascending?: boolean }): SupabaseQueryBuilder;
   limit(n: number): SupabaseQueryBuilder;
+  in(column: string, values: unknown[]): SupabaseQueryBuilder;
+  overlaps?(column: string, values: unknown[]): SupabaseQueryBuilder;
+  is?(column: string, value: unknown): SupabaseQueryBuilder;
   single(): Promise<{ data: Record<string, unknown> | null; error: unknown }>;
   then(resolve: (result: { data: unknown[]; error: unknown }) => void): void;
 }
@@ -207,24 +210,40 @@ export class SupabaseAdapter implements StorageAdapter {
     userId: string,
     embedding: number[],
     limit = 10,
+    filterTags?: string[],
   ): Promise<MemoryMatch[]> {
     // Use pgvector server-side search via Supabase RPC
     // Requires the `match_memories` SQL function (see docs for migration)
-    const result = await this.client.rpc("match_memories", {
+    const rpcParams: Record<string, unknown> = {
       query_embedding: embedding,
       match_user_id: userId,
       match_limit: limit,
-    });
+    };
+    if (filterTags && filterTags.length > 0) {
+      rpcParams.filter_tags = filterTags;
+    }
+
+    const result = await this.client.rpc("match_memories", rpcParams);
 
     if (result.error) {
       // Fall back to client-side search if RPC is not available
       const memories = await this.getMemories(userId);
-      return memories
-        .filter((m) => m.embedding !== null)
+      let filtered = memories.filter((m) => m.embedding !== null);
+      if (filterTags && filterTags.length > 0) {
+        filtered = filtered.filter(
+          (m) => m.tags && m.tags.some((t) => filterTags.includes(t)),
+        );
+      }
+      return filtered
         .map((m) => ({
           content: m.content,
           source: m.source,
           score: cosineSimilarity(embedding, m.embedding!),
+          id: m.id,
+          createdAt: m.createdAt,
+          pinned: m.pinned,
+          tags: m.tags,
+          embedding: m.embedding ?? undefined,
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
@@ -234,6 +253,11 @@ export class SupabaseAdapter implements StorageAdapter {
       content: row.content as string,
       source: row.source as MemoryMatch["source"],
       score: row.similarity as number,
+      id: row.id as string | undefined,
+      createdAt: row.created_at ? new Date(row.created_at as string) : undefined,
+      pinned: row.pinned as boolean | undefined,
+      tags: row.tags as string[] | undefined,
+      embedding: row.embedding as number[] | undefined,
     }));
   }
 
@@ -307,6 +331,60 @@ export class SupabaseAdapter implements StorageAdapter {
       source: row.source as Memory["source"],
       embedding: row.embedding as number[] | null,
       createdAt: new Date(row.created_at as string),
+      pinned: row.pinned as boolean | undefined,
+      tags: row.tags as string[] | undefined,
     };
+  }
+
+  async getLatestActiveThread(userId: string): Promise<Thread | null> {
+    const result = await this.client
+      .from("threads")
+      .select()
+      .eq("user_id", userId)
+      .in("state", ["active", "cooling"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (result.error || !result.data) return null;
+    return this.mapThread(result.data);
+  }
+
+  async getPinnedMemories(userId: string): Promise<Memory[]> {
+    return new Promise((resolve, reject) => {
+      this.client
+        .from("memories")
+        .select()
+        .eq("user_id", userId)
+        .eq("pinned", true)
+        .then((result) => {
+          if (result.error)
+            return reject(
+              new Error(`Failed to get pinned memories: ${result.error}`),
+            );
+          resolve(
+            (result.data as Record<string, unknown>[]).map(this.mapMemory),
+          );
+        });
+    });
+  }
+
+  async updateMemory(memoryId: string, updates: Partial<Memory>): Promise<void> {
+    const data: Record<string, unknown> = {};
+    if (updates.pinned !== undefined) data.pinned = updates.pinned;
+    if (updates.tags !== undefined) data.tags = updates.tags;
+    if (updates.content !== undefined) data.content = updates.content;
+    if (updates.source !== undefined) data.source = updates.source;
+    if (updates.embedding !== undefined) data.embedding = updates.embedding;
+
+    const result = await this.client
+      .from("memories")
+      .update(data)
+      .eq("id", memoryId)
+      .select()
+      .single();
+
+    if (result.error)
+      throw new Error(`Failed to update memory: ${result.error}`);
   }
 }

@@ -1,0 +1,178 @@
+---
+title: "Anthropic"
+description: "Use Anthropic Claude for chat and memory extraction with OpenAI embeddings."
+sidebar:
+  order: 2
+---
+
+## Installation
+
+Install Vitamem and both peer dependencies. Anthropic does not offer an embedding API, so the adapter uses the OpenAI SDK for embeddings.
+
+```bash
+npm install vitamem @anthropic-ai/sdk openai
+```
+
+## Quick Setup
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  storage: "ephemeral",
+});
+```
+
+:::note
+When using the `provider: "anthropic"` shortcut, the same `apiKey` value is
+  used for both the Anthropic chat API and the OpenAI embedding API. If your
+  keys differ, use the adapter factory directly (see below).
+:::
+
+## Adapter Factory
+
+For full control, use `createAnthropicAdapter`:
+
+```typescript
+import { createAnthropicAdapter, createVitamem } from "vitamem";
+
+const llm = createAnthropicAdapter({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  embeddingApiKey: process.env.OPENAI_API_KEY!,
+  chatModel: "claude-sonnet-4-20250514",
+  embeddingModel: "text-embedding-3-small",
+});
+
+const mem = await createVitamem({
+  llm,
+  storage: "ephemeral",
+});
+```
+
+### Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `apiKey` | `string` | **required** | Your Anthropic API key. |
+| `chatModel` | `string` | `"claude-sonnet-4-20250514"` | Model used for chat and memory extraction. |
+| `embeddingApiKey` | `string` | **required** | OpenAI API key used for embeddings. |
+| `embeddingModel` | `string` | `"text-embedding-3-small"` | OpenAI model used for embeddings. |
+| `baseUrl` | `string` | `undefined` | Override the Anthropic API base URL. |
+| `extractionPrompt` | `string` | Built-in prompt | Custom prompt for memory extraction. Must include a `{conversation}` placeholder. |
+
+## Why Two API Keys?
+
+Anthropic's API provides chat completions but does not offer a text embedding endpoint. Since Vitamem needs embeddings for semantic memory search, the Anthropic adapter delegates embedding calls to OpenAI.
+
+```
+Chat + Extraction  -->  Anthropic API  (uses apiKey)
+Embeddings         -->  OpenAI API     (uses embeddingApiKey)
+```
+
+This means you need active accounts with both providers. If you prefer a single-provider setup, consider the [OpenAI adapter](/providers/openai/) or bringing your own embeddings via a [custom adapter](/providers/custom-llm-adapter/).
+
+## System Prompt Handling
+
+The Anthropic Messages API treats system prompts differently from OpenAI. Instead of accepting `{ role: "system" }` messages in the messages array, Anthropic expects a top-level `system` parameter.
+
+The adapter handles this automatically. When Vitamem passes messages containing system-role entries (for example, injected memory context when `autoRetrieve` is enabled), the adapter:
+
+1. Separates system messages from the conversation
+2. Joins all system message content into a single `system` parameter
+3. Passes only `user` and `assistant` messages in the `messages` array
+
+```typescript
+// This works transparently -- system prompts are handled for you
+const { reply } = await mem.chat({
+  threadId: thread.id,
+  message: "How has my blood pressure been trending?",
+  systemPrompt: "You are a supportive health companion. Be empathetic and precise.",
+});
+```
+
+You do not need to do anything special for system prompts. The adapter handles the conversion.
+
+## Choosing Models
+
+### Chat Models
+
+Any model available through the Anthropic Messages API works:
+
+| Model | Best For |
+| --- | --- |
+| `claude-sonnet-4-20250514` | Default. Strong reasoning, good extraction quality. |
+| `claude-haiku-35-20241022` | Faster responses, lower cost. |
+| `claude-opus-4-20250514` | Maximum capability for complex health conversations. |
+
+```typescript
+const llm = createAnthropicAdapter({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  embeddingApiKey: process.env.OPENAI_API_KEY!,
+  chatModel: "claude-opus-4-20250514",
+});
+```
+
+### Embedding Models
+
+Since embeddings go through OpenAI, see the [OpenAI provider docs](/providers/openai/#embedding-models) for available embedding models.
+
+:::caution
+Changing the embedding model after memories have been stored will produce
+  vectors in a different space. Similarity search across old and new embeddings
+  will not work correctly.
+:::
+
+## Custom Extraction Prompt
+
+The Anthropic adapter includes a health-focused extraction prompt with detailed category guidance (medical conditions, medications, vital signs, lifestyle, goals, care team, and support preferences). You can override it:
+
+```typescript
+const llm = createAnthropicAdapter({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  embeddingApiKey: process.env.OPENAI_API_KEY!,
+  extractionPrompt: `Extract key facts from this health conversation.
+
+Conversation:
+{conversation}
+
+Return a JSON array only (no markdown, no explanation):
+[{ "content": "brief factual statement", "source": "confirmed" | "inferred" }]`,
+});
+```
+
+## Using a Custom Anthropic Base URL
+
+If you are routing through a proxy or using a self-hosted deployment, set `baseUrl`:
+
+```typescript
+const llm = createAnthropicAdapter({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  embeddingApiKey: process.env.OPENAI_API_KEY!,
+  baseUrl: "https://your-proxy.example.com/v1",
+});
+```
+
+This only affects the Anthropic chat endpoint. Embedding requests always go directly to the OpenAI API.
+
+## Peer Dependencies
+
+The Anthropic adapter requires two peer dependencies:
+
+```json
+{
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30.0",
+    "openai": ">=4.0.0"
+  }
+}
+```
+
+Both SDKs are lazy-loaded at runtime. If either is missing, you will get a module resolution error when the adapter is first used.
+
+## Next Steps
+
+- [OpenAI Provider](/providers/openai/) -- single-provider setup with OpenAI for everything
+- [Ollama Provider](/providers/ollama/) -- run models locally with zero config
+- [Custom LLM Adapter](/providers/custom-llm-adapter/) -- implement the interface for any provider

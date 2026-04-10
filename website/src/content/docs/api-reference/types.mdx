@@ -1,0 +1,207 @@
+---
+title: "Types"
+description: "TypeScript interfaces and types exported by Vitamem."
+sidebar:
+  order: 2
+---
+
+# Types
+
+All types are exported from `vitamem` and are available as TypeScript types.
+
+## Core Types
+
+### `Thread`
+
+Represents a conversation thread and its lifecycle state.
+
+```typescript
+interface Thread {
+  id: string;
+  userId: string;
+  state: ThreadState; // 'active' | 'cooling' | 'dormant' | 'closed'
+  messages: Message[];
+  createdAt: Date;
+  updatedAt: Date;
+  lastMessageAt: Date | null;
+  coolingStartedAt: Date | null;
+  dormantAt: Date | null;
+  closedAt: Date | null;
+}
+```
+
+### `ThreadState`
+
+```typescript
+type ThreadState = "active" | "cooling" | "dormant" | "closed";
+```
+
+### `Message`
+
+```typescript
+interface Message {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: Date;
+}
+```
+
+### `Memory`
+
+A stored fact about a user, with its embedding vector.
+
+```typescript
+interface Memory {
+  id: string;
+  userId: string;
+  threadId: string;
+  content: string;
+  source: MemorySource; // 'confirmed' | 'inferred'
+  embedding: number[] | null;
+  createdAt: Date;
+}
+```
+
+### `MemoryMatch`
+
+A memory returned from `retrieve()`, including its similarity score.
+
+```typescript
+interface MemoryMatch {
+  content: string;
+  source: MemorySource;
+  score: number; // 0–1 cosine similarity
+}
+```
+
+### `MemorySource`
+
+```typescript
+type MemorySource = "confirmed" | "inferred";
+```
+
+---
+
+## Adapter Interfaces
+
+### `LLMAdapter`
+
+```typescript
+interface LLMAdapter {
+  chat(messages: Array<{ role: string; content: string }>): Promise<string>;
+  extractMemories(
+    messages: Message[],
+  ): Promise<Array<{ content: string; source: MemorySource }>>;
+  embed(text: string): Promise<number[]>;
+}
+```
+
+### `StorageAdapter`
+
+```typescript
+interface StorageAdapter {
+  createThread(userId: string): Promise<Thread>;
+  getThread(threadId: string): Promise<Thread | null>;
+  updateThread(thread: Thread): Promise<Thread>;
+  addMessage(
+    threadId: string,
+    role: Message["role"],
+    content: string,
+  ): Promise<Message>;
+  getMessages(threadId: string): Promise<Message[]>;
+  saveMemory(memory: Omit<Memory, "id" | "createdAt">): Promise<Memory>;
+  getMemories(userId: string): Promise<Memory[]>;
+  searchMemories(
+    userId: string,
+    embedding: number[],
+    limit?: number,
+  ): Promise<MemoryMatch[]>;
+}
+```
+
+---
+
+### `StorageAdapter` (updated)
+
+The current interface includes optional methods for `sweepThreads()` and GDPR deletion:
+
+```typescript
+interface StorageAdapter {
+  createThread(userId: string): Promise<Thread>;
+  getThread(threadId: string): Promise<Thread | null>;
+  getThreadsByState?(state: ThreadState): Promise<Thread[]>;
+  updateThread(thread: Thread): Promise<Thread>;
+  addMessage(threadId: string, role: Message["role"], content: string): Promise<Message>;
+  getMessages(threadId: string): Promise<Message[]>;
+  saveMemory(memory: Omit<Memory, "id" | "createdAt">): Promise<Memory>;
+  getMemories(userId: string): Promise<Memory[]>;
+  searchMemories(userId: string, embedding: number[], limit?: number): Promise<MemoryMatch[]>;
+  deleteMemory?(memoryId: string): Promise<void>;
+  deleteUserMemories?(userId: string): Promise<void>;
+}
+```
+
+See the full [Storage Adapter reference](/api-reference/storage-adapter/) for details on each method.
+
+---
+
+## Configuration
+
+### `VitamemConfig`
+
+The unified config object passed to `createVitamem()`. Provide either a `provider` string or an `llm` adapter instance.
+
+```typescript
+type ProviderName = "openai" | "anthropic" | "ollama";
+
+interface VitamemConfig {
+  // LLM — string shortcut OR adapter instance (one required)
+  provider?: ProviderName;
+  apiKey?: string;
+  model?: string;
+  embeddingModel?: string;
+  baseUrl?: string;
+  llm?: LLMAdapter;
+
+  // Storage — string shortcut OR adapter instance (required)
+  storage: "ephemeral" | "supabase" | StorageAdapter;
+  supabaseUrl?: string;
+  supabaseKey?: string;
+
+  // Behavioral settings
+  coolingTimeoutMs?: number;       // default: 6 hours (21600000)
+  closedTimeoutMs?: number;        // default: 30 days (2592000000)
+  embeddingConcurrency?: number;   // default: 5
+  autoRetrieve?: boolean;          // default: false
+}
+```
+
+See [createVitamem](/api-reference/create-vitamem/) for full details on each option.
+
+---
+
+## Facade Interface
+
+### `Vitamem`
+
+The object returned by `createVitamem()`.
+
+```typescript
+interface Vitamem {
+  createThread(opts: { userId: string }): Promise<Thread>;
+  chat(opts: {
+    threadId: string;
+    message: string;
+    systemPrompt?: string;
+  }): Promise<{ reply: string; thread: Thread; memories?: MemoryMatch[] }>;
+  retrieve(opts: { userId: string; query: string; limit?: number }): Promise<MemoryMatch[]>;
+  getThread(threadId: string): Promise<Thread | null>;
+  triggerDormantTransition(threadId: string): Promise<void>;
+  closeThread(threadId: string): Promise<void>;
+  sweepThreads(): Promise<void>;
+  deleteMemory(memoryId: string): Promise<void>;
+  deleteUserData(userId: string): Promise<void>;
+}
+```

@@ -1,0 +1,396 @@
+---
+title: "Custom Storage Adapters"
+description: "How to build a custom StorageAdapter for Vitamem with any database backend."
+sidebar:
+  order: 4
+---
+
+# Custom Storage Adapters
+
+Vitamem ships with two storage backends -- `EphemeralAdapter` (in-memory, for development) and `SupabaseAdapter` (production). If your infrastructure uses a different database, you can implement the `StorageAdapter` interface to plug in any backend.
+
+## The StorageAdapter Interface
+
+The full interface is defined in `src/types.ts`:
+
+```typescript
+interface StorageAdapter {
+  // Thread management
+  createThread(userId: string): Promise<Thread>;
+  getThread(threadId: string): Promise<Thread | null>;
+  updateThread(thread: Thread): Promise<Thread>;
+
+  // Message storage
+  addMessage(
+    threadId: string,
+    role: Message["role"],
+    content: string,
+  ): Promise<Message>;
+  getMessages(threadId: string): Promise<Message[]>;
+
+  // Memory persistence
+  saveMemory(memory: Omit<Memory, "id" | "createdAt">): Promise<Memory>;
+  getMemories(userId: string): Promise<Memory[]>;
+  searchMemories(
+    userId: string,
+    embedding: number[],
+    limit?: number,
+  ): Promise<MemoryMatch[]>;
+
+  // Optional methods
+  getThreadsByState?(state: ThreadState): Promise<Thread[]>;
+  deleteMemory?(memoryId: string): Promise<void>;
+  deleteUserMemories?(userId: string): Promise<void>;
+}
+```
+
+There are 9 required methods and 3 optional ones. The optional methods enable `sweepThreads()`, `deleteMemory()`, and `deleteUserData()` on the Vitamem facade.
+
+## Method-by-Method Walkthrough
+
+### Required Methods
+
+#### `createThread(userId: string): Promise<Thread>`
+
+Create a new thread in the `active` state. Generate a unique ID (UUID recommended) and set all timestamp fields:
+
+- `createdAt` and `updatedAt` to the current time
+- `lastMessageAt`, `coolingStartedAt`, `dormantAt`, `closedAt` to `null`
+- `messages` to an empty array
+- `state` to `"active"`
+
+#### `getThread(threadId: string): Promise<Thread | null>`
+
+Retrieve a thread by its ID. Return `null` if not found. The returned object must include all `Thread` fields with proper `Date` objects (not ISO strings).
+
+#### `updateThread(thread: Thread): Promise<Thread>`
+
+Persist changes to an existing thread. The state machine calls this after every transition (`active -> cooling`, `cooling -> dormant`, etc.) with updated state and timestamp fields. Replace the entire thread record.
+
+#### `addMessage(threadId, role, content): Promise<Message>`
+
+Append a message to a thread. Generate a unique ID and set `createdAt`. Messages must be retrievable in chronological order by `getMessages()`.
+
+#### `getMessages(threadId: string): Promise<Message[]>`
+
+Return all messages for a thread, sorted by `createdAt` ascending. This is called during the embedding pipeline to get the full conversation for memory extraction.
+
+#### `saveMemory(memory): Promise<Memory>`
+
+Persist an extracted memory. The input omits `id` and `createdAt` -- you must generate both. The `embedding` field is a `number[]` (typically 1536 dimensions for OpenAI's `text-embedding-3-small`). Your storage must preserve the full vector.
+
+#### `getMemories(userId: string): Promise<Memory[]>`
+
+Return all memories for a user. This is used by the deduplication pipeline to check for duplicate facts during dormant transitions.
+
+#### `searchMemories(userId, embedding, limit?): Promise<MemoryMatch[]>`
+
+Semantic search: find the `limit` most similar memories to the given embedding vector. Return results sorted by descending similarity score (0 to 1).
+
+For databases with native vector support (PostgreSQL + pgvector, Pinecone, etc.), use server-side similarity search. Otherwise, compute cosine similarity in application code:
+
+```typescript
+import { cosineSimilarity } from "vitamem";
+
+async searchMemories(userId, embedding, limit = 10) {
+  const all = await this.getMemories(userId);
+  return all
+    .filter((m) => m.embedding !== null)
+    .map((m) => ({
+      content: m.content,
+      source: m.source,
+      score: cosineSimilarity(embedding, m.embedding!),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+```
+
+### Optional Methods
+
+#### `getThreadsByState?(state: ThreadState): Promise<Thread[]>`
+
+Return all threads in a given state. Required for `sweepThreads()` to work. If not implemented, calling `sweepThreads()` on the facade will throw an error.
+
+#### `deleteMemory?(memoryId: string): Promise<void>`
+
+Delete a single memory by ID. Required for the facade's `deleteMemory()` method (GDPR single-fact deletion).
+
+#### `deleteUserMemories?(userId: string): Promise<void>`
+
+Delete all memories for a user. Required for the facade's `deleteUserData()` method (GDPR full erasure).
+
+## Complete SQLite Example
+
+Here is a skeleton implementation using `better-sqlite3`. Adapt it to your preferred SQLite library or any SQL database.
+
+```typescript
+import { randomUUID } from "crypto";
+import Database from "better-sqlite3";
+import { cosineSimilarity } from "vitamem";
+import type {
+  StorageAdapter,
+  Thread,
+  ThreadState,
+  Message,
+  Memory,
+  MemoryMatch,
+} from "vitamem";
+
+export class SQLiteAdapter implements StorageAdapter {
+  private db: Database.Database;
+
+  constructor(dbPath: string) {
+    this.db = new Database(dbPath);
+    this.db.pragma("journal_mode = WAL");
+    this.migrate();
+  }
+
+  private migrate() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS threads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_message_at TEXT,
+        cooling_started_at TEXT,
+        dormant_at TEXT,
+        closed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES threads(id),
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL REFERENCES threads(id),
+        content TEXT NOT NULL,
+        source TEXT NOT NULL,
+        embedding TEXT,  -- JSON-serialized number[]
+        created_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  async createThread(userId: string): Promise<Thread> {
+    const now = new Date();
+    const id = randomUUID();
+    const thread: Thread = {
+      id,
+      userId,
+      state: "active",
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      lastMessageAt: null,
+      coolingStartedAt: null,
+      dormantAt: null,
+      closedAt: null,
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO threads (id, user_id, state, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(id, userId, "active", now.toISOString(), now.toISOString());
+
+    return thread;
+  }
+
+  async getThread(threadId: string): Promise<Thread | null> {
+    const row = this.db
+      .prepare("SELECT * FROM threads WHERE id = ?")
+      .get(threadId) as Record<string, string> | undefined;
+
+    if (!row) return null;
+    return this.mapThread(row);
+  }
+
+  async getThreadsByState(state: ThreadState): Promise<Thread[]> {
+    const rows = this.db
+      .prepare("SELECT * FROM threads WHERE state = ?")
+      .all(state) as Record<string, string>[];
+
+    return rows.map((row) => this.mapThread(row));
+  }
+
+  async updateThread(thread: Thread): Promise<Thread> {
+    this.db
+      .prepare(
+        `UPDATE threads SET
+           state = ?, updated_at = ?, last_message_at = ?,
+           cooling_started_at = ?, dormant_at = ?, closed_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        thread.state,
+        thread.updatedAt.toISOString(),
+        thread.lastMessageAt?.toISOString() ?? null,
+        thread.coolingStartedAt?.toISOString() ?? null,
+        thread.dormantAt?.toISOString() ?? null,
+        thread.closedAt?.toISOString() ?? null,
+        thread.id,
+      );
+
+    return thread;
+  }
+
+  async addMessage(
+    threadId: string,
+    role: Message["role"],
+    content: string,
+  ): Promise<Message> {
+    const now = new Date();
+    const id = randomUUID();
+    const message: Message = { id, threadId, role, content, createdAt: now };
+
+    this.db
+      .prepare(
+        `INSERT INTO messages (id, thread_id, role, content, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(id, threadId, role, content, now.toISOString());
+
+    return message;
+  }
+
+  async getMessages(threadId: string): Promise<Message[]> {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC",
+      )
+      .all(threadId) as Record<string, string>[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      threadId: row.thread_id,
+      role: row.role as Message["role"],
+      content: row.content,
+      createdAt: new Date(row.created_at),
+    }));
+  }
+
+  async saveMemory(memory: Omit<Memory, "id" | "createdAt">): Promise<Memory> {
+    const now = new Date();
+    const id = randomUUID();
+    const full: Memory = { ...memory, id, createdAt: now };
+
+    this.db
+      .prepare(
+        `INSERT INTO memories (id, user_id, thread_id, content, source, embedding, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        memory.userId,
+        memory.threadId,
+        memory.content,
+        memory.source,
+        memory.embedding ? JSON.stringify(memory.embedding) : null,
+        now.toISOString(),
+      );
+
+    return full;
+  }
+
+  async getMemories(userId: string): Promise<Memory[]> {
+    const rows = this.db
+      .prepare("SELECT * FROM memories WHERE user_id = ?")
+      .all(userId) as Record<string, string>[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      threadId: row.thread_id,
+      content: row.content,
+      source: row.source as Memory["source"],
+      embedding: row.embedding ? JSON.parse(row.embedding) : null,
+      createdAt: new Date(row.created_at),
+    }));
+  }
+
+  async searchMemories(
+    userId: string,
+    embedding: number[],
+    limit = 10,
+  ): Promise<MemoryMatch[]> {
+    // Client-side cosine similarity (no pgvector in SQLite)
+    const all = await this.getMemories(userId);
+    return all
+      .filter((m) => m.embedding !== null)
+      .map((m) => ({
+        content: m.content,
+        source: m.source,
+        score: cosineSimilarity(embedding, m.embedding!),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  async deleteMemory(memoryId: string): Promise<void> {
+    this.db.prepare("DELETE FROM memories WHERE id = ?").run(memoryId);
+  }
+
+  async deleteUserMemories(userId: string): Promise<void> {
+    this.db.prepare("DELETE FROM memories WHERE user_id = ?").run(userId);
+  }
+
+  private mapThread(row: Record<string, string>): Thread {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      state: row.state as ThreadState,
+      messages: [],
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      lastMessageAt: row.last_message_at
+        ? new Date(row.last_message_at)
+        : null,
+      coolingStartedAt: row.cooling_started_at
+        ? new Date(row.cooling_started_at)
+        : null,
+      dormantAt: row.dormant_at ? new Date(row.dormant_at) : null,
+      closedAt: row.closed_at ? new Date(row.closed_at) : null,
+    };
+  }
+}
+```
+
+## Using Your Custom Adapter
+
+Pass it directly to `createVitamem`:
+
+```typescript
+import { createVitamem } from "vitamem";
+import { SQLiteAdapter } from "./sqlite-adapter";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: new SQLiteAdapter("./vitamem.db"),
+});
+```
+
+When `storage` is an object (not a string like `"ephemeral"` or `"supabase"`), Vitamem uses it directly without any resolution logic.
+
+## Checklist
+
+Before shipping a custom adapter, verify:
+
+- [ ] `createThread` generates unique IDs and sets `state` to `"active"`
+- [ ] `getThread` returns `null` for missing threads (does not throw)
+- [ ] `updateThread` persists all timestamp fields including nulls
+- [ ] `getMessages` returns messages in chronological order
+- [ ] `saveMemory` preserves the full embedding vector without truncation
+- [ ] `searchMemories` returns results sorted by descending similarity score
+- [ ] Optional: `getThreadsByState` works for all four states (`active`, `cooling`, `dormant`, `closed`)
+- [ ] Optional: `deleteMemory` and `deleteUserMemories` fully remove data (GDPR compliance)
