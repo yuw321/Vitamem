@@ -1,42 +1,73 @@
 /* Vitamem brand colors: teal/slate theme */
+
+/* === Dark mode (Starlight :root = dark mode base) === */
 :root {
   --teal: #0f766e;
   --teal-lt: #14b8a6;
   --slate-dk: #0f172a;
 
-  /* Starlight color overrides */
-  --sl-color-accent-low: #0f766e1a;
-  --sl-color-accent: var(--teal);
-  --sl-color-accent-high: var(--teal-lt);
-  --sl-color-white: #ffffff;
+  /* Accents */
+  --sl-color-accent-low: #0f766e22;
+  --sl-color-accent: var(--teal-lt);
+  --sl-color-accent-high: #ccfbf1;
+
+  /* Dark mode: "white" = text (lightest), "black" = bg (darkest)
+     gray-1 = lightest gray → gray-6 = darkest gray */
+  --sl-color-white: #f1f5f9;
   --sl-color-gray-1: #e2e8f0;
   --sl-color-gray-2: #cbd5e1;
   --sl-color-gray-3: #94a3b8;
   --sl-color-gray-4: #64748b;
   --sl-color-gray-5: #475569;
   --sl-color-gray-6: #1e293b;
-  --sl-color-black: var(--slate-dk);
+  --sl-color-black: #0f172a;
+
+  /* Header */
+  --sl-color-header-bg: #0f172a;
+  --sl-color-header-border: rgba(255, 255, 255, 0.06);
 }
 
-:root[data-theme='dark'] {
-  --sl-color-accent-low: #0f766e33;
-  --sl-color-accent: var(--teal-lt);
-  --sl-color-accent-high: #ccfbf1;
-  --sl-color-white: #f8fafc;
-  --sl-color-gray-1: #334155;
-  --sl-color-gray-2: #475569;
-  --sl-color-gray-3: #64748b;
+/* === Light mode overrides ===
+   Starlight INVERTS semantics in light mode:
+   "white" = darkest text, "black" = lightest background
+   gray-1 = darkest → gray-7 = lightest */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #0f766e15;
+  --sl-color-accent: var(--teal);
+  --sl-color-accent-high: #0f766e;
+
+  --sl-color-white: #0f172a;
+  --sl-color-gray-1: #1e293b;
+  --sl-color-gray-2: #334155;
+  --sl-color-gray-3: #475569;
   --sl-color-gray-4: #94a3b8;
   --sl-color-gray-5: #cbd5e1;
   --sl-color-gray-6: #e2e8f0;
-  --sl-color-black: var(--slate-dk);
+  --sl-color-gray-7: #f8fafc;
+  --sl-color-black: #ffffff;
+
+  /* Header */
+  --sl-color-header-bg: #ffffff;
+  --sl-color-header-border: rgba(0, 0, 0, 0.08);
 }
 
 /* Link styling */
 a {
+  --sl-color-text-accent: var(--teal-lt);
+}
+
+:root[data-theme='light'] a {
   --sl-color-text-accent: var(--teal);
 }
 
-:root[data-theme='dark'] a {
-  --sl-color-text-accent: var(--teal-lt);
+/* Sidebar active item readability fix */
+:root a[aria-current='page'],
+:root [aria-current='page'] {
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+:root[data-theme='light'] a[aria-current='page'],
+:root[data-theme='light'] [aria-current='page'] {
+  color: #0f172a !important;
 }

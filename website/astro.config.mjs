@@ -8,6 +8,7 @@ export default defineConfig({
 		starlight({
 			title: 'Vitamem',
 			description: 'Memory for AI health companions',
+			favicon: '/brand/logo-concept-a.svg',
 			social: [
 				{
 					icon: 'github',
