@@ -69,6 +69,7 @@ export function extractFactsSimple(messages: Message[]): ExtractedFact[] {
 export const MEMORY_TAGS = [
   'medication',
   'condition',
+  'vital',
   'lifestyle',
   'preference',
   'social',
@@ -90,9 +91,11 @@ export function classifyTags(content: string): string[] {
   const lifestylePatterns = /\b(exercise|workout|diet|sleep|walk|run|gym|yoga|meditation|smoke|smoking|alcohol|drink|weight|calorie|vegan|vegetarian)\b/i;
   const preferencePatterns = /\b(prefer|like|dislike|favorite|want|enjoy|love|hate|rather|choose)\b/i;
   const socialPatterns = /\b(family|friend|wife|husband|partner|child|children|parent|mother|father|sibling|brother|sister|colleague|doctor|therapist)\b/i;
+  const vitalPatterns = /\b(a1c|hba1c|hemoglobin|blood pressure|bp|systolic|diastolic|blood sugar|glucose|blood glucose|weight|bmi|body mass|heart rate|pulse|bpm|cholesterol|ldl|hdl|triglycerides)\b/i;
 
   if (medicationPatterns.test(lower)) tags.push('medication');
   if (conditionPatterns.test(lower)) tags.push('condition');
+  if (vitalPatterns.test(lower)) tags.push('vital');
   if (lifestylePatterns.test(lower)) tags.push('lifestyle');
   if (preferencePatterns.test(lower)) tags.push('preference');
   if (socialPatterns.test(lower)) tags.push('social');

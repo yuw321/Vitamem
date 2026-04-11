@@ -90,8 +90,10 @@ function PipelineStep({
 
 export function createPipelineSteps(data?: {
   extractedFacts: number;
+  profileFieldsUpdated: number;
   embeddingCount: number;
   deduplicatedCount: number;
+  supersededCount: number;
   savedCount: number;
 }): PipelineState {
   return {
@@ -103,6 +105,14 @@ export function createPipelineSteps(data?: {
         status: "pending",
         data: data
           ? `${data.extractedFacts} facts extracted`
+          : undefined,
+      },
+      {
+        name: "Profile updated",
+        description: "structured field classification",
+        status: "pending",
+        data: data
+          ? `${data.profileFieldsUpdated} fields updated`
           : undefined,
       },
       {
@@ -119,6 +129,14 @@ export function createPipelineSteps(data?: {
         status: "pending",
         data: data
           ? `${data.deduplicatedCount} duplicates filtered`
+          : undefined,
+      },
+      {
+        name: "Memories updated",
+        description: "supersede stale facts",
+        status: "pending",
+        data: data
+          ? `${data.supersededCount} memories superseded`
           : undefined,
       },
       {
@@ -139,12 +157,14 @@ export function animatePipeline(
   setPipeline: React.Dispatch<React.SetStateAction<PipelineState | null>>,
   data?: {
     extractedFacts: number;
+    profileFieldsUpdated: number;
     embeddingCount: number;
     deduplicatedCount: number;
+    supersededCount: number;
     savedCount: number;
   }
 ): Promise<void> {
-  const delays = [800, 1200, 700, 600];
+  const delays = [800, 500, 1200, 700, 500, 600];
 
   return new Promise<void>((resolve) => {
     const pipeline = createPipelineSteps(data);

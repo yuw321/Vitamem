@@ -79,6 +79,7 @@ describe('runEmbeddingPipeline', () => {
       memoriesDeduped: 0,
       memoriesSuperseded: 0,
       totalExtracted: 0,
+      profileFieldsUpdated: 0,
     });
     expect(llm.extractMemories).not.toHaveBeenCalled();
   });
@@ -310,6 +311,89 @@ describe('runEmbeddingPipeline', () => {
     expect(storage.saveMemory).not.toHaveBeenCalled();
   });
 
+  it('preserves confirmed source when superseded by inferred fact', async () => {
+    const messages = [makeMessage()];
+
+    // Existing memory embedding
+    const existingEmb = [1, 0, 0];
+    // New embedding in supersede band: cos(30°) ≈ 0.866
+    const newEmb = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), 0];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'A1C is 6.8%', source: 'inferred' },
+      ]),
+      embed: vi.fn().mockResolvedValue(newEmb),
+    });
+
+    const updateMemory = vi.fn().mockResolvedValue(undefined);
+    const storage = makeStorageAdapter({
+      getMemories: vi.fn().mockResolvedValue([
+        {
+          id: 'mem-confirmed',
+          userId: 'user-1',
+          threadId: 'old-thread',
+          content: 'A1C is 7.4%',
+          source: 'confirmed',
+          embedding: existingEmb,
+          createdAt: new Date(),
+        },
+      ]),
+      updateMemory,
+    });
+
+    const result = await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75,
+    );
+
+    expect(result.memoriesSuperseded).toBe(1);
+    expect(updateMemory).toHaveBeenCalledWith('mem-confirmed', expect.objectContaining({
+      content: 'A1C is 6.8%',
+      source: 'confirmed', // preserved, NOT downgraded to "inferred"
+    }));
+  });
+
+  it('preserves pinned status when superseded by non-pinnable fact', async () => {
+    const messages = [makeMessage()];
+
+    const existingEmb = [1, 0, 0];
+    const newEmb = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6), 0];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'Walks 45 minutes daily', source: 'inferred' },
+      ]),
+      embed: vi.fn().mockResolvedValue(newEmb),
+    });
+
+    const updateMemory = vi.fn().mockResolvedValue(undefined);
+    const storage = makeStorageAdapter({
+      getMemories: vi.fn().mockResolvedValue([
+        {
+          id: 'mem-pinned',
+          userId: 'user-1',
+          threadId: 'old-thread',
+          content: 'Walks 30 minutes daily',
+          source: 'confirmed',
+          pinned: true,
+          embedding: existingEmb,
+          createdAt: new Date(),
+        },
+      ]),
+      updateMemory,
+    });
+
+    const result = await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75, 5, [],
+    );
+
+    expect(result.memoriesSuperseded).toBe(1);
+    expect(updateMemory).toHaveBeenCalledWith('mem-pinned', expect.objectContaining({
+      content: 'Walks 45 minutes daily',
+      pinned: true, // preserved even though new fact wouldn't trigger auto-pin
+    }));
+  });
+
   it('auto-pins allergy memory with HEALTH_AUTO_PIN_RULES', async () => {
     const messages = [makeMessage()];
 
@@ -347,6 +431,26 @@ describe('runEmbeddingPipeline', () => {
 
     expect(storage.saveMemory).toHaveBeenCalledWith(
       expect.objectContaining({ pinned: false }),
+    );
+  });
+
+  it('auto-pins medication-dosage memory with HEALTH_AUTO_PIN_RULES', async () => {
+    const messages = [makeMessage()];
+
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: 'Takes Metformin 1000mg twice daily', source: 'confirmed' },
+      ]),
+    });
+
+    const storage = makeStorageAdapter();
+
+    await runEmbeddingPipeline(
+      makeThread(), messages, llm, storage, 0.92, 0.75, 5, HEALTH_AUTO_PIN_RULES,
+    );
+
+    expect(storage.saveMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ pinned: true }),
     );
   });
 });

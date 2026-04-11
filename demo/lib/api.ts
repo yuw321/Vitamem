@@ -1,4 +1,5 @@
 import type { ChatResponse, ConfigResponse, SSEEvent } from "./types";
+import type { UserProfile } from "vitamem";
 
 // ---------------------------------------------------------------------------
 // Chat
@@ -113,6 +114,8 @@ export async function triggerDormant(threadId: string): Promise<{
   embeddingCount: number;
   deduplicatedCount: number;
   savedCount: number;
+  memoriesSuperseded: number;
+  profileFieldsUpdated: number;
   thread: { id: string; state: string };
 }> {
   const res = await fetch("/api/thread", {
@@ -217,6 +220,17 @@ export async function sweepThreads(): Promise<{ success: boolean }> {
 
 export async function getConfig(): Promise<ConfigResponse> {
   const res = await fetch("/api/config");
+  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Profile
+// ---------------------------------------------------------------------------
+
+export async function getProfile(userId?: string): Promise<{ profile: UserProfile }> {
+  const params = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+  const res = await fetch(`/api/profile${params}`);
   if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
   return res.json();
 }

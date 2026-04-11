@@ -9,6 +9,20 @@ sidebar:
 
 When a thread transitions to **dormant**, Vitamem extracts the meaningful facts from the conversation using your LLM adapter. This is the core operation that turns raw conversation history into a searchable memory store.
 
+## Why Extraction Matters
+
+Extraction converts raw conversation into **structured, searchable facts**. Instead of storing entire message histories verbatim, Vitamem distills each session down to the handful of statements that matter — stripping away greetings, filler, and back-and-forth clarification. Each fact is classified as `confirmed` or `inferred`, giving downstream systems a confidence signal they wouldn't have with raw messages.
+
+The real power of extraction **compounds over time**. As sessions accumulate, [deduplication](/concepts/deduplication/) and supersede keep the memory store lean instead of growing linearly:
+
+| Session | Raw conversation | Memory store result |
+|---------|-----------------|--------------------|
+| **1** | "I was diagnosed with type 2 diabetes about 3 years ago" | New fact saved: `"Has Type 2 diabetes, diagnosed ~3 years ago"` |
+| **5** | User mentions diabetes again | Deduplicated — already stored, nothing added |
+| **12** | "My A1C went from 7.4 to 6.8" | Supersedes previous A1C value in-place |
+
+After 30 daily sessions, a user's memory store might contain ~20 refined facts rather than thousands of raw messages. Without extraction, memory grows with every conversation; with it, the store **converges on a concise, current knowledge base** that is fast to search and cheap to embed.
+
 ## How Extraction Works
 
 The extraction pipeline calls `llm.extractMemories(messages)` with the full conversation history. Your LLM adapter is responsible for returning an array of structured facts:
@@ -63,6 +77,22 @@ The Anthropic adapter uses a similar prompt with additional health-specific cate
 The `{conversation}` placeholder is replaced with the formatted conversation history at extraction time.
 
 ## Custom Extraction Prompt
+
+### Using a Different Model for Extraction
+
+You can use a cheaper or faster model for memory extraction while keeping a more capable model for chat responses. Set `extractionModel` in your config:
+
+```typescript
+const vm = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: "gpt-4o",              // capable model for chat
+  extractionModel: "gpt-4o-mini", // cheaper model for extraction
+  storage: "ephemeral",
+});
+```
+
+This is useful when extraction doesn't require the full reasoning power of your chat model. Since extraction happens in the background during dormant transitions, using a cheaper model can significantly reduce costs without impacting chat quality.
 
 You can set `extractionPrompt` directly in the top-level `VitamemConfig`. When using the `provider` shortcut, this is forwarded to the built-in adapter automatically:
 
@@ -199,7 +229,7 @@ const mem = await createVitamem({
 
 ### Built-in Health Auto-Pin Rules
 
-`HEALTH_AUTO_PIN_RULES` includes 6 rules that cover the most common safety-critical categories:
+`HEALTH_AUTO_PIN_RULES` includes 7 rules that cover the most common safety-critical categories:
 
 | Pattern | Reason | Example Match |
 |---------|--------|---------------|
@@ -209,6 +239,7 @@ const mem = await createVitamem({
 | `\bdo\s*not\s*(take\|use\|prescribe)\b` | contraindication | "Do not prescribe NSAIDs" |
 | `\bemergency\s*contact\b` | emergency-contact | "Emergency contact: spouse at 555-1234" |
 | `\bblood\s*type\b` | blood-type | "Blood type A+" |
+| `\b\d+\s*(mg\|mcg\|ml\|units?)\b` | medication-dosage | "Takes Metformin 1000mg" |
 
 ### Custom Auto-Pin Rules
 

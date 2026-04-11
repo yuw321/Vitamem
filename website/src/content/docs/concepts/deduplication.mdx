@@ -74,6 +74,10 @@ When a new fact falls in the supersede band (between `supersedeThreshold` and `d
 
 **Example:** A user says _"My last A1C was 7.4%"_ and that fact is stored. Months later they say _"Current A1C is 6.8%"_. The cosine similarity between these two facts is ~0.88 — above the supersede threshold (0.75) but below the dedup threshold (0.92). Instead of storing both values (which would create conflicting memories), the old memory is updated to "Current A1C is 6.8%".
 
+:::note[Source and Pinned Preservation]
+When a memory is superseded, Vitamem preserves the higher-confidence source classification. A "confirmed" memory will never be downgraded to "inferred" during supersede. Similarly, pinned status is preserved — a pinned memory stays pinned after supersede.
+:::
+
 ### Configuring Thresholds
 
 Both thresholds are configurable via `VitamemConfig`:

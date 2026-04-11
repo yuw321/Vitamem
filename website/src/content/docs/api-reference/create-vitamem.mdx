@@ -26,6 +26,7 @@ Provide **either** a `provider` string shortcut **or** an `llm` adapter instance
 | `provider` | `"openai" \| "anthropic" \| "ollama"` | — | Creates a built-in adapter (requires `apiKey` for cloud providers) |
 | `apiKey` | `string` | — | API key for the provider |
 | `model` | `string` | Provider default | Chat model override |
+| `extractionModel` | `string` | Same as `model` | Model for memory extraction. Use a cheaper/faster model for extraction while keeping a more capable chat model. |
 | `embeddingModel` | `string` | Provider default | Embedding model override |
 | `baseUrl` | `string` | Provider default | API base URL (for proxies, self-hosted) |
 | `llm` | `LLMAdapter` | — | Custom adapter instance (overrides `provider`) |

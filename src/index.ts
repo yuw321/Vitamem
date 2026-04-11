@@ -23,6 +23,9 @@ export {
   findMostSimilar,
   deduplicateFacts,
 } from "./memory/deduplication.js";
+export { validateExtraction } from "./memory/extraction-schema.js";
+export type { ValidatedMemory } from "./memory/extraction-schema.js";
+export { classifyStructuredFacts, applyStructuredFacts } from "./memory/structured-extraction.js";
 export { runEmbeddingPipeline } from "./embedding/pipeline.js";
 export {
   applyRecencyWeighting,
@@ -39,5 +42,5 @@ export { createOllamaAdapter } from "./adapters/ollama.js";
 // Backward compatibility
 export { EphemeralAdapter as InMemoryAdapter } from "./storage/ephemeral-adapter.js";
 
-export { HEALTH_AUTO_PIN_RULES } from "./types.js";
+export { HEALTH_AUTO_PIN_RULES, HEALTH_STRUCTURED_RULES, createEmptyProfile } from "./types.js";
 export type * from "./types.js";

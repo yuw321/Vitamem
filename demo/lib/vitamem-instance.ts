@@ -5,6 +5,7 @@ import {
   createOllamaAdapter,
   EphemeralAdapter,
   HEALTH_AUTO_PIN_RULES,
+  HEALTH_STRUCTURED_RULES,
 } from "vitamem";
 import type { Vitamem, VitamemConfig, PresetName, ProviderName, StorageAdapter } from "vitamem";
 
@@ -38,6 +39,7 @@ function buildConfig(): VitamemConfig {
       llm = createOpenAIAdapter({
         apiKey: process.env.OPENAI_API_KEY ?? "",
         chatModel: process.env.OPENAI_CHAT_MODEL,
+        extractionModel: process.env.EXTRACTION_MODEL,
         embeddingModel: process.env.OPENAI_EMBEDDING_MODEL,
         baseUrl: process.env.OPENAI_BASE_URL,
         apiMode: (process.env.OPENAI_API_MODE as 'completions' | 'responses') || undefined,
@@ -50,6 +52,7 @@ function buildConfig(): VitamemConfig {
       llm = createAnthropicAdapter({
         apiKey: process.env.ANTHROPIC_API_KEY ?? "",
         chatModel: process.env.ANTHROPIC_CHAT_MODEL,
+        extractionModel: process.env.EXTRACTION_MODEL,
         embeddingApiKey: process.env.ANTHROPIC_EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
         embeddingModel: process.env.ANTHROPIC_EMBEDDING_MODEL,
         baseUrl: process.env.ANTHROPIC_BASE_URL,
@@ -59,6 +62,7 @@ function buildConfig(): VitamemConfig {
     case "ollama": {
       llm = createOllamaAdapter({
         chatModel: process.env.OLLAMA_CHAT_MODEL,
+        extractionModel: process.env.EXTRACTION_MODEL,
         embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL,
         baseUrl: process.env.OLLAMA_BASE_URL,
       });
@@ -108,6 +112,7 @@ function buildConfig(): VitamemConfig {
     supersedeThreshold: process.env.SUPERSEDE_THRESHOLD
       ? Number(process.env.SUPERSEDE_THRESHOLD)
       : undefined,
+    structuredExtractionRules: HEALTH_STRUCTURED_RULES,
   };
 
   return config;

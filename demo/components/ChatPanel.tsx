@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,6 +26,17 @@ interface ChatPanelProps {
   onNextStep: () => void;
   onSkipScenario: () => void;
   threadState: string;
+  scenarioComplete: boolean;
+  currentScenarioIdx: number;
+  totalScenarios: number;
+  currentScenarioName?: string;
+  nextScenarioName?: string;
+  nextScenarioDescription?: string;
+  onNextScenario: () => void;
+  onRestartDemos: () => void;
+  onContinueChatting: () => void;
+  scenarioStepIndex: number;
+  scenarioTotalSteps: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +52,17 @@ export default function ChatPanel({
   onNextStep,
   onSkipScenario,
   threadState,
+  scenarioComplete,
+  currentScenarioIdx,
+  totalScenarios,
+  currentScenarioName,
+  nextScenarioName,
+  nextScenarioDescription,
+  onNextScenario,
+  onRestartDemos,
+  onContinueChatting,
+  scenarioStepIndex,
+  scenarioTotalSteps,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -48,7 +71,7 @@ export default function ChatPanel({
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, scenarioComplete]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,8 +109,13 @@ export default function ChatPanel({
 
       {/* Scenario step description banner */}
       {scenarioActive && scenarioStepDescription && (
-        <div className="px-5 py-2.5 bg-[rgba(20,184,166,0.06)] border-b border-[rgba(20,184,166,0.1)] text-xs text-[var(--teal-lt)] font-medium animate-fade-in">
-          {scenarioStepDescription}
+        <div className="px-5 py-2.5 bg-[rgba(20,184,166,0.06)] border-b border-[rgba(20,184,166,0.1)] text-xs text-[var(--teal-lt)] font-medium animate-fade-in flex items-center justify-between">
+          <span>{scenarioStepDescription}</span>
+          {currentScenarioIdx >= 0 && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--silver)] ml-3 shrink-0">
+              Demo {currentScenarioIdx + 1} of {totalScenarios}
+            </span>
+          )}
         </div>
       )}
 
@@ -123,26 +151,62 @@ export default function ChatPanel({
           </div>
         )}
 
+        {/* Scenario transition card */}
+        {scenarioComplete && (
+          <ScenarioTransitionCard
+            currentScenarioIdx={currentScenarioIdx}
+            totalScenarios={totalScenarios}
+            currentScenarioName={currentScenarioName}
+            nextScenarioName={nextScenarioName}
+            nextScenarioDescription={nextScenarioDescription}
+            onNextScenario={onNextScenario}
+            onRestartDemos={onRestartDemos}
+            onContinueChatting={onContinueChatting}
+          />
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input / guided demo controls */}
       <div className="px-5 py-3.5 border-t border-[var(--border)] shrink-0">
         {scenarioActive ? (
-          <div className="flex gap-2">
-            <button
-              onClick={onNextStep}
-              disabled={isLoading}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-[var(--teal)] text-white hover:bg-[var(--teal-mid)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ▶ Next Step
-            </button>
-            <button
-              onClick={onSkipScenario}
-              className="px-4 py-2.5 rounded-lg text-sm font-semibold text-[var(--silver)] bg-[rgba(255,255,255,0.06)] border border-[var(--border)] hover:bg-[rgba(255,255,255,0.1)] hover:text-[var(--snow)] transition-colors"
-            >
-              Skip
-            </button>
+          <div className="flex flex-col gap-2">
+            {/* Progress indicator */}
+            {currentScenarioIdx >= 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-[var(--snow)] tracking-wide">
+                    Step {scenarioStepIndex} of {scenarioTotalSteps}
+                  </span>
+                  <span className="text-[11px] font-semibold text-[var(--silver)] tracking-wide">
+                    Demo {currentScenarioIdx + 1} of {totalScenarios} — {currentScenarioName}
+                  </span>
+                </div>
+                {/* Thin progress bar */}
+                <div className="w-full h-[3px] rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[var(--teal)] transition-all duration-300 ease-out"
+                    style={{ width: scenarioTotalSteps > 0 ? `${(scenarioStepIndex / scenarioTotalSteps) * 100}%` : '0%' }}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={onNextStep}
+                disabled={isLoading}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-[var(--teal)] text-white hover:bg-[var(--teal-mid)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                ▶ Next Step
+              </button>
+              <button
+                onClick={onSkipScenario}
+                className="px-4 py-2.5 rounded-lg text-sm font-semibold text-[var(--silver)] bg-[rgba(255,255,255,0.06)] border border-[var(--border)] hover:bg-[rgba(255,255,255,0.1)] hover:text-[var(--snow)] transition-colors"
+              >
+                Skip
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex gap-2">
@@ -164,6 +228,93 @@ export default function ChatPanel({
             </button>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario transition card sub-component
+// ---------------------------------------------------------------------------
+
+function ScenarioTransitionCard({
+  currentScenarioIdx,
+  totalScenarios,
+  currentScenarioName,
+  nextScenarioName,
+  nextScenarioDescription,
+  onNextScenario,
+  onRestartDemos,
+  onContinueChatting,
+}: {
+  currentScenarioIdx: number;
+  totalScenarios: number;
+  currentScenarioName?: string;
+  nextScenarioName?: string;
+  nextScenarioDescription?: string;
+  onNextScenario: () => void;
+  onRestartDemos: () => void;
+  onContinueChatting: () => void;
+}) {
+  const isLast = currentScenarioIdx >= totalScenarios - 1;
+  const demoNumber = currentScenarioIdx + 1;
+
+  if (isLast) {
+    return (
+      <div className="mx-auto w-full max-w-[420px] animate-msg-in">
+        <div className="rounded-xl border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.06)] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[#22c55e] text-lg">✓</span>
+            <span className="text-sm font-bold text-[#22c55e]">
+              All {totalScenarios} demos complete!
+            </span>
+          </div>
+          <p className="text-xs text-[var(--silver)] leading-relaxed mb-4">
+            You&apos;ve seen all core Vitamem features. Continue chatting freely or
+            restart any demo from the Guided Demo menu above.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={onRestartDemos}
+              className="flex-1 px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--teal)] text-white hover:bg-[var(--teal-mid)] transition-colors"
+            >
+              Restart Demos
+            </button>
+            <button
+              onClick={onContinueChatting}
+              className="flex-1 px-4 py-2 rounded-lg text-xs font-semibold text-[var(--silver)] bg-[rgba(255,255,255,0.06)] border border-[var(--border)] hover:bg-[rgba(255,255,255,0.1)] hover:text-[var(--snow)] transition-colors"
+            >
+              Continue Chatting
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[420px] animate-msg-in">
+      <div className="rounded-xl border border-[rgba(20,184,166,0.25)] bg-[rgba(20,184,166,0.06)] p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[var(--teal-lt)] text-lg">✓</span>
+          <span className="text-sm font-bold text-[var(--teal-lt)]">
+            Demo {demoNumber} of {totalScenarios} complete
+          </span>
+        </div>
+        <div className="mb-1 text-sm font-semibold text-[var(--snow)]">
+          Next: {nextScenarioName}
+        </div>
+        {nextScenarioDescription && (
+          <p className="text-xs text-[var(--silver)] leading-relaxed mb-4">
+            {nextScenarioDescription}
+          </p>
+        )}
+        <button
+          onClick={onNextScenario}
+          className="w-full px-4 py-2.5 rounded-lg text-sm font-semibold bg-[var(--teal)] text-white hover:bg-[var(--teal-mid)] transition-colors"
+        >
+          Continue to Next Demo →
+        </button>
       </div>
     </div>
   );
@@ -220,7 +371,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               : "bg-[rgba(255,255,255,0.04)] border border-[var(--border)] rounded-bl-sm text-[var(--snow)]"
           }`}
         >
-          {message.content}
+          {isUser ? (
+            message.content
+          ) : (
+            <div className="markdown-body">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
+          )}
           {message.isStreaming && (
             <span className="streaming-cursor">▊</span>
           )}

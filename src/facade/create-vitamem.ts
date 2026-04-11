@@ -5,6 +5,7 @@ import {
   MemoryMatch,
   LLMAdapter,
   StorageAdapter,
+  UserProfile,
 } from "../types.js";
 import { PRESETS } from "../presets.js";
 import {
@@ -18,6 +19,76 @@ import { EphemeralAdapter } from "../storage/ephemeral-adapter.js";
 import { applyRecencyWeighting, applyMMR } from "../retrieval/reranking.js";
 
 const DEFAULT_COOLING_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Format a UserProfile as a structured text summary for LLM context injection.
+ */
+function formatProfileContext(profile: UserProfile): string {
+  const lines: string[] = [];
+
+  if (profile.conditions.length > 0) {
+    lines.push(`Conditions: ${profile.conditions.join(", ")}`);
+  }
+  if (profile.medications.length > 0) {
+    const meds = profile.medications.map((m) => {
+      let s = m.name;
+      if (m.dosage) s += ` ${m.dosage}`;
+      if (m.frequency) s += ` (${m.frequency})`;
+      return s;
+    });
+    lines.push(`Medications: ${meds.join(", ")}`);
+  }
+  if (profile.allergies.length > 0) {
+    lines.push(`Allergies: ${profile.allergies.join(", ")}`);
+  }
+  if (Object.keys(profile.vitals).length > 0) {
+    const vitals = Object.entries(profile.vitals).map(([key, v]) => {
+      let s = `${key}: ${v.value}${v.unit}`;
+      if (v.previousValue !== undefined) s += ` (previous: ${v.previousValue}${v.unit})`;
+      return s;
+    });
+    lines.push(`Vitals: ${vitals.join(", ")}`);
+  }
+  if (profile.goals.length > 0) {
+    lines.push(`Goals: ${profile.goals.join(", ")}`);
+  }
+  if (profile.emergencyContacts.length > 0) {
+    lines.push(`Emergency contacts: ${profile.emergencyContacts.join(", ")}`);
+  }
+
+  return lines.length > 0 ? `Patient Profile:\n${lines.join("\n")}` : "";
+}
+
+/**
+ * Best-effort filter: suppress memory matches whose content mentions a metric
+ * that is already tracked in the profile with a different value.
+ */
+function suppressStaleMemories(results: MemoryMatch[], profile: UserProfile): MemoryMatch[] {
+  if (Object.keys(profile.vitals).length === 0) return results;
+
+  return results.filter((r) => {
+    const content = r.content.toLowerCase();
+    for (const [key, vital] of Object.entries(profile.vitals)) {
+      const normalizedKey = key.replace(/_/g, " ").toLowerCase();
+      // Check if content mentions this metric keyword
+      if (!content.includes(normalizedKey) && !content.includes(key.toLowerCase())) {
+        continue;
+      }
+      // Content mentions this metric — check if the value matches
+      const profileValueStr = String(vital.value);
+      if (!content.includes(profileValueStr)) {
+        // Memory mentions the metric but with a different value → suppress
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+interface RetrievalPipelineResult {
+  memories: MemoryMatch[];
+  profile: UserProfile | null;
+}
 const DEFAULT_CLOSED_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DEFAULT_EMBEDDING_CONCURRENCY = 5;
 
@@ -47,6 +118,7 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
       return createOpenAIAdapter({
         apiKey: config.apiKey!,
         chatModel: config.model,
+        extractionModel: config.extractionModel,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
         apiMode: config.apiMode,
@@ -62,6 +134,7 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
       return createAnthropicAdapter({
         apiKey: config.apiKey!,
         chatModel: config.model,
+        extractionModel: config.extractionModel,
         embeddingApiKey: config.apiKey!,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
@@ -72,6 +145,7 @@ async function resolveLLM(config: VitamemConfig): Promise<LLMAdapter> {
       const { createOllamaAdapter } = await import("../adapters/ollama.js");
       return createOllamaAdapter({
         chatModel: config.model,
+        extractionModel: config.extractionModel,
         embeddingModel: config.embeddingModel,
         baseUrl: config.baseUrl,
         extractionPrompt: config.extractionPrompt,
@@ -142,6 +216,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
   const deduplicationThreshold = config.deduplicationThreshold ?? 0.92;
   const supersedeThreshold = config.supersedeThreshold ?? 0.75;
   const autoPinRules = config.autoPinRules ?? [];
+  const structuredRules = config.structuredExtractionRules;
   const autoRetrieve = config.autoRetrieve ?? false;
   const minScore = config.minScore ?? 0;
   const recencyWeight = config.recencyWeight ?? 0;
@@ -168,7 +243,17 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
     limit: number = 10,
     filterTags?: string[],
     query?: string,
-  ): Promise<MemoryMatch[]> {
+  ): Promise<RetrievalPipelineResult> {
+    // 0. Profile lookup (if storage supports it)
+    let profile: UserProfile | null = null;
+    if (storage.getProfile) {
+      try {
+        profile = await storage.getProfile(userId);
+      } catch (err) {
+        console.warn('[vitamem:retrieval] Profile lookup failed:', err);
+      }
+    }
+
     // 1. Get pinned memories
     let pinnedMatches: MemoryMatch[] = [];
     if (storage.getPinnedMemories) {
@@ -206,25 +291,30 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       vectorResults = vectorResults.filter((r) => r.score >= minScore);
     }
 
-    // 5. Apply recency weighting (if recencyWeight > 0)
+    // 5. Suppress stale memories that contradict profile data
+    if (profile) {
+      vectorResults = suppressStaleMemories(vectorResults, profile);
+    }
+
+    // 6. Apply recency weighting (if recencyWeight > 0)
     if (recencyWeight > 0) {
       vectorResults = applyRecencyWeighting(vectorResults, recencyWeight, recencyMaxAgeMs);
     }
 
-    // 6. Apply MMR diversity (if diversityWeight > 0)
+    // 7. Apply MMR diversity (if diversityWeight > 0)
     if (diversityWeight > 0) {
       vectorResults = applyMMR(vectorResults, diversityWeight, limit);
     }
 
-    // 7. Merge: pinned first, then vector results
+    // 8. Merge: pinned first, then vector results
     let results = [...pinnedMatches, ...vectorResults];
 
-    // 8. Pass through onRetrieve hook
+    // 9. Pass through onRetrieve hook
     if (onRetrieve) {
       results = await onRetrieve(results, query ?? "");
     }
 
-    return results;
+    return { memories: results, profile };
   }
 
   const api: Vitamem = {
@@ -261,13 +351,23 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       let retrievedMemories: MemoryMatch[] | undefined;
       if (autoRetrieve) {
         const queryEmbedding = await llm.embed(message);
-        retrievedMemories = await runRetrievalPipeline(
+        const pipelineResult = await runRetrievalPipeline(
           current.userId,
           queryEmbedding,
           10,
           undefined,
           message,
         );
+        retrievedMemories = pipelineResult.memories;
+
+        // Inject profile context as the FIRST system message
+        if (pipelineResult.profile) {
+          const profileText = formatProfileContext(pipelineResult.profile);
+          if (profileText) {
+            chatMessages.push({ role: "system", content: profileText });
+          }
+        }
+
         if (retrievedMemories.length > 0) {
           const defaultFormatter = (memories: MemoryMatch[]) =>
             `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
@@ -308,7 +408,8 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
 
     async retrieve({ userId, query, limit, filterTags }) {
       const queryEmbedding = await llm.embed(query);
-      return runRetrievalPipeline(userId, queryEmbedding, limit, filterTags, query);
+      const result = await runRetrievalPipeline(userId, queryEmbedding, limit, filterTags, query);
+      return result.memories;
     },
 
     async getThread(threadId) {
@@ -350,7 +451,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
 
       // Run embedding pipeline
       const messages = await storage.getMessages(threadId);
-      await runEmbeddingPipeline(
+      const pipelineResult = await runEmbeddingPipeline(
         current,
         messages,
         llm,
@@ -359,7 +460,9 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         supersedeThreshold,
         embeddingConcurrency,
         autoPinRules,
+        structuredRules,
       );
+      return pipelineResult;
     },
 
     async closeThread(threadId) {
@@ -411,6 +514,7 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
             supersedeThreshold,
             embeddingConcurrency,
             autoPinRules,
+            structuredRules,
           );
         }
       }
@@ -490,13 +594,23 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       let retrievedMemories: MemoryMatch[] | undefined;
       if (autoRetrieve) {
         const queryEmbedding = await llm.embed(message);
-        retrievedMemories = await runRetrievalPipeline(
+        const pipelineResult = await runRetrievalPipeline(
           current.userId,
           queryEmbedding,
           10,
           undefined,
           message,
         );
+        retrievedMemories = pipelineResult.memories;
+
+        // Inject profile context as the FIRST system message
+        if (pipelineResult.profile) {
+          const profileText = formatProfileContext(pipelineResult.profile);
+          if (profileText) {
+            chatMessages.push({ role: "system", content: profileText });
+          }
+        }
+
         if (retrievedMemories.length > 0) {
           const defaultFormatter = (memories: MemoryMatch[]) =>
             `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
@@ -557,6 +671,21 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
     async chatWithUserStream({ userId, message, systemPrompt }) {
       const thread = await api.getOrCreateThread(userId);
       return api.chatStream({ threadId: thread.id, message, systemPrompt });
+    },
+
+    /** Get a user's structured profile. Returns null if profile storage is not supported or no profile exists. */
+    async getProfile(userId: string): Promise<UserProfile | null> {
+      if (!storage.getProfile) return null;
+      return storage.getProfile(userId);
+    },
+
+    /** Update a user's structured profile (merge semantics). No-op if profile storage is not supported. */
+    async updateProfile(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void> {
+      if (!storage.updateProfile) {
+        console.warn('[vitamem] updateProfile called but storage adapter does not support profiles');
+        return;
+      }
+      await storage.updateProfile(userId, updates);
     },
   };
 

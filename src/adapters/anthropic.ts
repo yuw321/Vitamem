@@ -1,8 +1,10 @@
 import type { LLMAdapter, Message, MemorySource } from "../types.js";
+import { validateExtraction } from "../memory/extraction-schema.js";
 
 export interface AnthropicAdapterOptions {
   apiKey: string;
   chatModel?: string;
+  extractionModel?: string;
   embeddingApiKey: string;
   embeddingModel?: string;
   baseUrl?: string;
@@ -28,13 +30,25 @@ Categories to focus on:
 Conversation:
 {conversation}
 
-Return a JSON array only (no markdown fences, no explanation):
-[{ "content": "specific factual statement", "source": "confirmed" | "inferred" }]
+Return ONLY valid JSON (no markdown fences, no explanation):
+{
+  "memories": [
+    { "content": "specific factual statement", "source": "confirmed", "tags": ["category"] },
+    { "content": "another fact derived from context", "source": "inferred", "tags": ["category"] }
+  ]
+}
 
+Guidelines:
+- Each memory must have: content (string), source ("confirmed" or "inferred"), and tags (array of strings)
 - "confirmed" = user directly stated this
 - "inferred" = you derived this from context
+- Tag each fact with a category: "condition", "medication", "lifestyle", "vital", "goal", "social", or "general"
 - Be specific: include numbers, dates, frequencies when mentioned
-- Skip greetings, small talk, and transient emotions`;
+- Skip greetings, small talk, and transient emotions
+- When a value has been updated (e.g., A1C went from 7.4% to 6.8%), extract ONLY the current value as the fact. Do not create a separate fact for the previous value — the system tracks changes automatically.
+- Do not extract facts that merely restate information from earlier in the conversation. Focus on what is NEW or CHANGED.
+- For health metrics (A1C, blood pressure, weight, glucose, etc.), always extract the most recent value only.
+- Return empty memories array if no facts found: { "memories": [] }`;
 
 function cleanJsonResponse(raw: string): string {
   return raw
@@ -55,6 +69,7 @@ export function createAnthropicAdapter(
   opts: AnthropicAdapterOptions,
 ): LLMAdapter {
   const chatModel = opts.chatModel ?? DEFAULT_CHAT_MODEL;
+  const extractionModel = opts.extractionModel ?? chatModel;
   const embeddingModel = opts.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
   const extractionPrompt = opts.extractionPrompt ?? DEFAULT_EXTRACTION_PROMPT;
 
@@ -152,9 +167,22 @@ export function createAnthropicAdapter(
 
       const prompt = extractionPrompt.replace("{conversation}", conversation);
 
-      // Use the chat method for extraction
-      const raw = await this.chat([{ role: "user", content: prompt }]);
-      return JSON.parse(cleanJsonResponse(raw));
+      // Use extraction model (falls back to chat model)
+      const client = await getAnthropicClient();
+      const response = await client.messages.create({
+        model: extractionModel,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const raw = response.content[0].text;
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJsonResponse(raw));
+      } catch (parseError) {
+        console.warn('[vitamem:extraction] JSON parse failed, raw response:', raw.substring(0, 200));
+        return [];
+      }
+      return validateExtraction(parsed);
     },
 
     async embed(text: string): Promise<number[]> {

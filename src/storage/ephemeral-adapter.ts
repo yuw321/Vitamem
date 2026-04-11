@@ -5,6 +5,9 @@ import {
   Message,
   Memory,
   MemoryMatch,
+  UserProfile,
+  Medication,
+  createEmptyProfile,
 } from "../types.js";
 import { cosineSimilarity } from "../memory/deduplication.js";
 
@@ -16,6 +19,7 @@ export class EphemeralAdapter implements StorageAdapter {
   private threads = new Map<string, Thread>();
   private messages = new Map<string, Message[]>();
   private memories: Memory[] = [];
+  private profiles = new Map<string, UserProfile>();
 
   async createThread(userId: string): Promise<Thread> {
     const now = new Date();
@@ -143,5 +147,62 @@ export class EphemeralAdapter implements StorageAdapter {
     const idx = this.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) throw new Error(`Memory not found: ${memoryId}`);
     this.memories[idx] = { ...this.memories[idx], ...updates };
+  }
+
+  async getProfile(userId: string): Promise<UserProfile | null> {
+    return this.profiles.get(userId) ?? null;
+  }
+
+  async updateProfile(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void> {
+    const profile = this.profiles.get(userId) ?? createEmptyProfile(userId);
+    const merged = { ...profile, ...updates, userId, updatedAt: new Date() };
+    // Don't overwrite arrays with empty arrays if not explicitly provided
+    if (updates.conditions) merged.conditions = updates.conditions;
+    if (updates.medications) merged.medications = updates.medications;
+    if (updates.allergies) merged.allergies = updates.allergies;
+    if (updates.goals) merged.goals = updates.goals;
+    if (updates.emergencyContacts) merged.emergencyContacts = updates.emergencyContacts;
+    if (updates.vitals) merged.vitals = { ...profile.vitals, ...updates.vitals };
+    if (updates.customFields) merged.customFields = { ...profile.customFields, ...updates.customFields };
+    this.profiles.set(userId, merged);
+  }
+
+  async updateProfileField(userId: string, field: string, value: unknown, action: "set" | "add" | "remove"): Promise<void> {
+    const profile = this.profiles.get(userId) ?? createEmptyProfile(userId);
+    const key = field as keyof UserProfile;
+
+    if (action === "set") {
+      (profile as unknown as Record<string, unknown>)[key] = value;
+    } else if (action === "add") {
+      if (field === "vitals" && typeof value === "object" && value !== null) {
+        const vitalEntry = value as { key: string; record: unknown };
+        profile.vitals[vitalEntry.key] = vitalEntry.record as UserProfile["vitals"][string];
+      } else if (field === "medications" && typeof value === "object" && value !== null) {
+        const med = value as Medication;
+        const idx = profile.medications.findIndex((m) => m.name === med.name);
+        if (idx >= 0) {
+          profile.medications[idx] = med;
+        } else {
+          profile.medications.push(med);
+        }
+      } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
+        const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
+        if (typeof value === "string" && !arr.includes(value)) {
+          arr.push(value);
+        } else if (typeof value !== "string") {
+          arr.push(value);
+        }
+      }
+    } else if (action === "remove") {
+      if (field === "medications" && typeof value === "string") {
+        profile.medications = profile.medications.filter((m) => m.name !== value);
+      } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
+        const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
+        (profile as unknown as Record<string, unknown>)[key] = arr.filter((item) => item !== value);
+      }
+    }
+
+    profile.updatedAt = new Date();
+    this.profiles.set(userId, profile);
   }
 }

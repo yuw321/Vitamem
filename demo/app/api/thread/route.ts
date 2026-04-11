@@ -100,26 +100,19 @@ export async function PATCH(request: NextRequest) {
     }
 
     const vm = await getVitamem();
-    const storage = getStorage();
-    const userId = getDemoUserId();
 
     if (action === "dormant") {
-      // Get memory count before transition for computing extraction stats
-      const memoriesBefore = await storage.getMemories(userId);
-
-      await vm.triggerDormantTransition(threadId);
-
-      // Get memory count after to compute extraction stats
-      const memoriesAfter = await storage.getMemories(userId);
-      const savedCount = memoriesAfter.length - memoriesBefore.length;
+      const pipelineResult = await vm.triggerDormantTransition(threadId);
 
       const thread = await vm.getThread(threadId);
 
       return NextResponse.json({
-        extractedFacts: savedCount, // approximate: we know how many were saved
-        embeddingCount: savedCount,
-        deduplicatedCount: 0, // not directly available from facade
-        savedCount,
+        extractedFacts: pipelineResult.totalExtracted,
+        embeddingCount: pipelineResult.totalExtracted,
+        deduplicatedCount: pipelineResult.memoriesDeduped,
+        savedCount: pipelineResult.memoriesSaved,
+        memoriesSuperseded: pipelineResult.memoriesSuperseded,
+        profileFieldsUpdated: pipelineResult.profileFieldsUpdated ?? 0,
         thread: thread
           ? { id: thread.id, state: thread.state }
           : { id: threadId, state: "dormant" },

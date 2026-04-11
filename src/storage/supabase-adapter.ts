@@ -5,6 +5,9 @@ import {
   Message,
   Memory,
   MemoryMatch,
+  UserProfile,
+  Medication,
+  createEmptyProfile,
 } from "../types.js";
 import { cosineSimilarity } from "../memory/deduplication.js";
 
@@ -18,6 +21,7 @@ export interface SupabaseClient {
 
 export interface SupabaseQueryBuilder {
   insert(data: Record<string, unknown>): SupabaseQueryBuilder;
+  upsert(data: Record<string, unknown>, opts?: { onConflict?: string }): SupabaseQueryBuilder;
   select(columns?: string): SupabaseQueryBuilder;
   update(data: Record<string, unknown>): SupabaseQueryBuilder;
   delete(): SupabaseQueryBuilder;
@@ -388,5 +392,116 @@ export class SupabaseAdapter implements StorageAdapter {
 
     if (result.error)
       throw new Error(`Failed to update memory: ${result.error}`);
+  }
+
+  async getProfile(userId: string): Promise<UserProfile | null> {
+    const result = await this.client
+      .from("user_profiles")
+      .select()
+      .eq("user_id", userId)
+      .single();
+
+    if (result.error || !result.data) return null;
+    return this.mapProfile(result.data);
+  }
+
+  async updateProfile(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void> {
+    const existing = await this.getProfile(userId);
+    const base = existing ?? createEmptyProfile(userId);
+
+    const merged: UserProfile = {
+      ...base,
+      ...updates,
+      userId,
+      vitals: updates.vitals ? { ...base.vitals, ...updates.vitals } : base.vitals,
+      customFields: updates.customFields ? { ...base.customFields, ...updates.customFields } : base.customFields,
+      updatedAt: new Date(),
+    };
+
+    const row: Record<string, unknown> = {
+      user_id: userId,
+      conditions: merged.conditions,
+      medications: JSON.stringify(merged.medications),
+      allergies: merged.allergies,
+      vitals: JSON.stringify(merged.vitals),
+      goals: merged.goals,
+      emergency_contacts: merged.emergencyContacts,
+      custom_fields: JSON.stringify(merged.customFields),
+      updated_at: merged.updatedAt!.toISOString(),
+    };
+
+    const result = await this.client
+      .from("user_profiles")
+      .upsert(row, { onConflict: "user_id" })
+      .select()
+      .single();
+
+    if (result.error)
+      throw new Error(`Failed to update profile: ${result.error}`);
+  }
+
+  async updateProfileField(userId: string, field: string, value: unknown, action: "set" | "add" | "remove"): Promise<void> {
+    // Read-modify-write approach for consistent behavior
+    const profile = (await this.getProfile(userId)) ?? createEmptyProfile(userId);
+    const key = field as keyof UserProfile;
+
+    if (action === "set") {
+      (profile as unknown as Record<string, unknown>)[key] = value;
+    } else if (action === "add") {
+      if (field === "vitals" && typeof value === "object" && value !== null) {
+        const vitalEntry = value as { key: string; record: unknown };
+        profile.vitals[vitalEntry.key] = vitalEntry.record as UserProfile["vitals"][string];
+      } else if (field === "medications" && typeof value === "object" && value !== null) {
+        const med = value as Medication;
+        const idx = profile.medications.findIndex((m) => m.name === med.name);
+        if (idx >= 0) {
+          profile.medications[idx] = med;
+        } else {
+          profile.medications.push(med);
+        }
+      } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
+        const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
+        if (typeof value === "string" && !arr.includes(value)) {
+          arr.push(value);
+        } else if (typeof value !== "string") {
+          arr.push(value);
+        }
+      }
+    } else if (action === "remove") {
+      if (field === "medications" && typeof value === "string") {
+        profile.medications = profile.medications.filter((m) => m.name !== value);
+      } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
+        const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
+        (profile as unknown as Record<string, unknown>)[key] = arr.filter((item) => item !== value);
+      }
+    }
+
+    profile.updatedAt = new Date();
+
+    // Write back the full profile
+    const { userId: _uid, ...updates } = profile;
+    await this.updateProfile(userId, updates);
+  }
+
+  private mapProfile(row: Record<string, unknown>): UserProfile {
+    const parseJsonField = <T>(val: unknown, fallback: T): T => {
+      if (val === null || val === undefined) return fallback;
+      if (typeof val === "string") {
+        try { return JSON.parse(val) as T; } catch { return fallback; }
+      }
+      return val as T;
+    };
+
+    return {
+      userId: row.user_id as string,
+      conditions: (row.conditions as string[]) ?? [],
+      medications: parseJsonField<UserProfile["medications"]>(row.medications, []),
+      allergies: (row.allergies as string[]) ?? [],
+      vitals: parseJsonField<UserProfile["vitals"]>(row.vitals, {}),
+      goals: (row.goals as string[]) ?? [],
+      emergencyContacts: (row.emergency_contacts as string[]) ?? [],
+      customFields: parseJsonField<Record<string, unknown>>(row.custom_fields, {}),
+      updatedAt: row.updated_at ? new Date(row.updated_at as string) : undefined,
+    };
   }
 }

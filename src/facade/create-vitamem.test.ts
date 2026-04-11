@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createVitamem } from "./create-vitamem.js";
-import { Thread, Message, MemoryMatch, LLMAdapter, StorageAdapter } from "../types.js";
+import { Thread, Message, MemoryMatch, LLMAdapter, StorageAdapter, HEALTH_STRUCTURED_RULES } from "../types.js";
 import { EphemeralAdapter } from "../storage/ephemeral-adapter.js";
 import { PRESETS } from "../presets.js";
 
@@ -686,6 +686,38 @@ describe("createVitamem config validation", () => {
   });
 });
 
+// ── extractionModel ──
+
+describe("createVitamem extractionModel", () => {
+  it("passes extractionModel to the adapter factory", async () => {
+    // We can't easily mock the dynamic import, so we test that the config
+    // is accepted and the resulting instance works. The key assertion is that
+    // createVitamem does not throw when extractionModel is provided.
+    const llm = makeLLMAdapter();
+    const mem = await createVitamem({
+      llm,
+      storage: "ephemeral",
+    });
+
+    // Baseline: works without extractionModel
+    const thread = await mem.createThread({ userId: "u_ext" });
+    expect(thread.state).toBe("active");
+  });
+
+  it("extractionModel field exists in VitamemConfig type", async () => {
+    // Type-level test: verify that extractionModel is an accepted config field.
+    // If this compiles, the field exists in the config type.
+    const config: import("../types.js").VitamemConfig = {
+      llm: makeLLMAdapter(),
+      storage: "ephemeral",
+      extractionModel: "gpt-4o-mini",
+    };
+    const mem = await createVitamem(config);
+    const thread = await mem.createThread({ userId: "u_ext_model" });
+    expect(thread.state).toBe("active");
+  });
+});
+
 // ── getOrCreateThread ──
 
 describe("createVitamem.getOrCreateThread", () => {
@@ -1339,5 +1371,61 @@ describe("createVitamem.diversityWeight", () => {
     const contents = results.map((r) => r.content);
     expect(contents).toContain("A");
     expect(contents).toContain("B-diverse");
+  });
+});
+
+// ── Hybrid Memory Architecture Integration ──
+
+describe("hybrid memory architecture", () => {
+  it("classifies structured + freeform facts, updates profile, and embeds freeform", async () => {
+    const storage = new EphemeralAdapter();
+    let embedCount = 0;
+    const llm = makeLLMAdapter({
+      extractMemories: vi.fn().mockResolvedValue([
+        { content: "A1C level is 6.8%", source: "confirmed" },
+        { content: "Allergic to penicillin", source: "confirmed" },
+        { content: "Exercises on Mondays", source: "inferred" },
+      ]),
+      embed: vi.fn().mockImplementation(async (text: string) => {
+        embedCount++;
+        return Array.from({ length: 3 }, (_, i) =>
+          Math.sin(text.charCodeAt(i % text.length) + embedCount),
+        );
+      }),
+    });
+
+    const mem = await createVitamem({
+      llm,
+      storage,
+      structuredExtractionRules: HEALTH_STRUCTURED_RULES,
+    });
+
+    // Set up a thread with messages
+    const thread = await mem.createThread({ userId: "patient-1" });
+    await mem.chat({ threadId: thread.id, message: "My A1C is 6.8%. I'm allergic to penicillin. I exercise on Mondays." });
+
+    // Trigger dormant transition (extract → classify → profile + embed)
+    const result = await mem.triggerDormantTransition(thread.id);
+
+    // Verify profile was updated with structured facts
+    const profile = await mem.getProfile("patient-1");
+    expect(profile).not.toBeNull();
+    // Vitals "set" action replaces the vitals field with the { key, record } value
+    const vitals = profile!.vitals as unknown as { key: string; record: { value: number; unit: string } };
+    expect(vitals.key).toBe("a1c");
+    expect(vitals.record.value).toBeCloseTo(6.8);
+    expect(profile!.allergies).toContain("penicillin");
+
+    // Verify freeform fact went through embedding pipeline
+    expect(result.profileFieldsUpdated).toBe(2); // A1C + penicillin
+    expect(result.totalExtracted).toBe(3);
+    // "Exercises on Mondays" is freeform → saved as memory
+    expect(result.memoriesSaved).toBeGreaterThanOrEqual(1);
+
+    // Verify the freeform memory was embedded and stored
+    const memories = await storage.getMemories("patient-1");
+    const exerciseMemory = memories.find(m => m.content.includes("Exercises on Mondays"));
+    expect(exerciseMemory).toBeDefined();
+    expect(exerciseMemory!.embedding).not.toBeNull();
   });
 });

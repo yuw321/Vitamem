@@ -13,8 +13,11 @@ import MemoryPanel, {
   type SearchResult,
 } from "@/components/MemoryPanel";
 import ConfigSidebar from "@/components/ConfigSidebar";
+import ProfileCard from "@/components/ProfileCard";
 import type { ConfigResponse } from "@/lib/types";
+import type { UserProfile } from "vitamem";
 import type { Scenario, ScenarioAction } from "@/lib/scenarios";
+import { SCENARIOS } from "@/lib/scenarios";
 import * as api from "@/lib/api";
 import { sendMessageStream } from "@/lib/api";
 
@@ -44,6 +47,7 @@ export default function DemoPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   // Counters for thread panel
   const [embedCount, setEmbedCount] = useState(0);
@@ -53,6 +57,8 @@ export default function DemoPage() {
   const [scenarioSteps, setScenarioSteps] = useState<ScenarioAction[]>([]);
   const [scenarioIndex, setScenarioIndex] = useState(0);
   const [scenarioDescription, setScenarioDescription] = useState<string | null>(null);
+  const [currentScenarioIdx, setCurrentScenarioIdx] = useState<number>(-1);
+  const [scenarioComplete, setScenarioComplete] = useState(false);
 
   // Ref for awaiting reply before proceeding
   const awaitingReplyRef = useRef(false);
@@ -77,6 +83,13 @@ export default function DemoPage() {
       } catch {
         /* will be created on first message */
       }
+      // Load initial profile
+      try {
+        const { profile: p } = await api.getProfile();
+        setProfile(p);
+      } catch {
+        /* non-critical */
+      }
     })();
   }, []);
 
@@ -92,6 +105,16 @@ export default function DemoPage() {
           createdAt: t.createdAt,
         }))
       );
+    } catch {
+      /* non-critical */
+    }
+  }, []);
+
+  // ── Refresh profile ──────────────────────────────────────────────────
+  const refreshProfile = useCallback(async () => {
+    try {
+      const { profile: p } = await api.getProfile();
+      setProfile(p);
     } catch {
       /* non-critical */
     }
@@ -244,8 +267,10 @@ export default function DemoPage() {
       // Animate pipeline with real data
       await animatePipeline(setPipeline, {
         extractedFacts: result.extractedFacts,
+        profileFieldsUpdated: result.profileFieldsUpdated,
         embeddingCount: result.embeddingCount,
         deduplicatedCount: result.deduplicatedCount,
+        supersededCount: result.memoriesSuperseded,
         savedCount: result.savedCount,
       });
 
@@ -257,7 +282,7 @@ export default function DemoPage() {
       );
 
       // Refresh data
-      await Promise.all([refreshMemories(), refreshThreads()]);
+      await Promise.all([refreshMemories(), refreshThreads(), refreshProfile()]);
     } catch (err) {
       const errorMsg: ChatMessage = {
         id: nextId(),
@@ -268,7 +293,7 @@ export default function DemoPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentThread, refreshMemories, refreshThreads]);
+  }, [currentThread, refreshMemories, refreshThreads, refreshProfile]);
 
   // ── New session ────────────────────────────────────────────────────────
   const handleNewSession = useCallback(async () => {
@@ -383,6 +408,9 @@ export default function DemoPage() {
 
   // ── Scenario runner ────────────────────────────────────────────────────
   const handleSelectScenario = useCallback((scenario: Scenario) => {
+    const idx = SCENARIOS.findIndex((s) => s.id === scenario.id);
+    setCurrentScenarioIdx(idx);
+    setScenarioComplete(false);
     setScenarioActive(true);
     setScenarioSteps(scenario.steps);
     setScenarioIndex(0);
@@ -395,6 +423,7 @@ export default function DemoPage() {
 
   const handleSkipScenario = useCallback(() => {
     setScenarioActive(false);
+    setScenarioComplete(false);
     setScenarioSteps([]);
     setScenarioIndex(0);
     setScenarioDescription(null);
@@ -484,16 +513,60 @@ export default function DemoPage() {
 
   const handleNextStep = useCallback(async () => {
     if (!scenarioActive || scenarioIndex >= scenarioSteps.length) {
-      // Scenario complete
+      // Scenario complete — show transition card
       setScenarioActive(false);
-      setScenarioDescription("Demo complete!");
+      setScenarioComplete(true);
+      setScenarioDescription(null);
       return;
     }
 
     const step = scenarioSteps[scenarioIndex];
-    setScenarioIndex((prev) => prev + 1);
+    let nextIdx = scenarioIndex + 1;
+    setScenarioIndex(nextIdx);
     await executeScenarioStep(step);
+
+    // Auto-advance through waitForReply steps (no extra click needed)
+    while (
+      nextIdx < scenarioSteps.length &&
+      scenarioSteps[nextIdx].type === "waitForReply"
+    ) {
+      const waitStep = scenarioSteps[nextIdx];
+      nextIdx += 1;
+      setScenarioIndex(nextIdx);
+      await executeScenarioStep(waitStep);
+    }
   }, [scenarioActive, scenarioIndex, scenarioSteps, executeScenarioStep]);
+
+  const handleNextScenario = useCallback(() => {
+    const nextIdx = currentScenarioIdx + 1;
+    if (nextIdx < SCENARIOS.length) {
+      const scenario = SCENARIOS[nextIdx];
+      // Preserve Vitamem instance & memories — only clear UI state
+      setCurrentScenarioIdx(nextIdx);
+      setScenarioComplete(false);
+      setScenarioActive(true);
+      setScenarioSteps(scenario.steps);
+      setScenarioIndex(0);
+      setScenarioDescription(scenario.description);
+      setMessages([]);
+      setPipelineVisible(false);
+      setPipeline(null);
+    }
+  }, [currentScenarioIdx]);
+
+  const handleRestartDemos = useCallback(() => {
+    handleSelectScenario(SCENARIOS[0]);
+  }, [handleSelectScenario]);
+
+  const handleContinueChatting = useCallback(() => {
+    setScenarioComplete(false);
+    setScenarioDescription(null);
+  }, []);
+
+  // Computed: next scenario name (if any)
+  const nextScenario = currentScenarioIdx >= 0 && currentScenarioIdx < SCENARIOS.length - 1
+    ? SCENARIOS[currentScenarioIdx + 1]
+    : null;
 
   // ── Computed values ────────────────────────────────────────────────────
   const messageCount = messages.filter(
@@ -522,6 +595,17 @@ export default function DemoPage() {
             onNextStep={handleNextStep}
             onSkipScenario={handleSkipScenario}
             threadState={currentThread?.state ?? "active"}
+            scenarioComplete={scenarioComplete}
+            currentScenarioIdx={currentScenarioIdx}
+            totalScenarios={SCENARIOS.length}
+            currentScenarioName={currentScenarioIdx >= 0 ? SCENARIOS[currentScenarioIdx]?.name : undefined}
+            nextScenarioName={nextScenario?.name}
+            nextScenarioDescription={nextScenario?.description}
+            onNextScenario={handleNextScenario}
+            onRestartDemos={handleRestartDemos}
+            onContinueChatting={handleContinueChatting}
+            scenarioStepIndex={scenarioIndex}
+            scenarioTotalSteps={scenarioSteps.length}
           />
 
           {/* Right column */}
@@ -540,6 +624,8 @@ export default function DemoPage() {
             />
 
             <PipelineViz pipeline={pipeline} visible={pipelineVisible} />
+
+            <ProfileCard profile={profile} />
 
             <MemoryPanel
               memories={memories}

@@ -83,6 +83,15 @@ export interface StorageAdapter {
   getLatestActiveThread?(userId: string): Promise<Thread | null>;
   getPinnedMemories?(userId: string): Promise<Memory[]>;
   updateMemory?(memoryId: string, updates: Partial<Memory>): Promise<void>;
+
+  /** Get the user's structured profile. Returns null if no profile exists. */
+  getProfile?(userId: string): Promise<UserProfile | null>;
+
+  /** Update the user's profile with partial data (merge semantics). Creates profile if it doesn't exist. */
+  updateProfile?(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void>;
+
+  /** Update a single profile field with set/add/remove semantics for array fields. */
+  updateProfileField?(userId: string, field: string, value: unknown, action: "set" | "add" | "remove"): Promise<void>;
 }
 
 // ── LLM adapter interface ──
@@ -128,7 +137,155 @@ export const HEALTH_AUTO_PIN_RULES: AutoPinRule[] = [
   { pattern: /\bdo\s*not\s*(take|use|prescribe)\b/i, reason: "contraindication" },
   { pattern: /\bemergency\s*contact\b/i, reason: "emergency-contact" },
   { pattern: /\bblood\s*type\b/i, reason: "blood-type" },
+  { pattern: /\b\d+\s*(mg|mcg|ml|units?)\b/i, reason: "medication-dosage" },
 ];
+
+// ── Hybrid memory: structured profile types ──
+
+export interface Medication {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  /** When the medication was started or last confirmed */
+  updatedAt?: Date;
+}
+
+export interface VitalRecord {
+  value: number;
+  unit: string;
+  /** When this reading was recorded */
+  recordedAt?: Date;
+  /** Previous value before this update, for tracking trends */
+  previousValue?: number;
+}
+
+export interface UserProfile {
+  userId: string;
+  /** Active medical conditions */
+  conditions: string[];
+  /** Current medications with dosage information */
+  medications: Medication[];
+  /** Known allergies */
+  allergies: string[];
+  /** Health vitals keyed by metric name (e.g., "a1c", "blood_pressure", "weight") */
+  vitals: Record<string, VitalRecord>;
+  /** Health and wellness goals */
+  goals: string[];
+  /** Emergency contacts */
+  emergencyContacts: string[];
+  /** Extensible key-value store for domain-specific fields */
+  customFields: Record<string, unknown>;
+  /** Last time profile was updated */
+  updatedAt?: Date;
+}
+
+export interface StructuredFact {
+  /** Which profile field this fact maps to */
+  field: keyof Omit<UserProfile, "userId" | "customFields" | "updatedAt">;
+  /** The extracted value (type depends on field) */
+  value: unknown;
+  /** Whether to set, add to array, or remove from array */
+  action: "set" | "add" | "remove";
+  /** Original extracted text that produced this fact */
+  sourceText: string;
+}
+
+export interface StructuredExtractionRule {
+  /** Regex pattern to match against extracted fact text */
+  pattern: RegExp;
+  /** Which profile field this rule targets */
+  profileField: keyof Omit<UserProfile, "userId" | "customFields" | "updatedAt">;
+  /** Function to extract the structured value from the matched text */
+  extractor: (text: string, match: RegExpMatchArray) => { value: unknown; action: "set" | "add" | "remove" };
+}
+
+export const HEALTH_STRUCTURED_RULES: StructuredExtractionRule[] = [
+  // Vitals: A1C / HbA1c
+  {
+    pattern: /\bA1C\b.*?(\d+\.?\d*)%?/i,
+    profileField: "vitals",
+    extractor: (_text, match) => ({
+      value: { key: "a1c", record: { value: parseFloat(match[1]), unit: "%" } },
+      action: "set",
+    }),
+  },
+  // Vitals: Blood pressure
+  {
+    pattern: /\bblood\s*pressure\b.*?(\d{2,3})\s*\/\s*(\d{2,3})/i,
+    profileField: "vitals",
+    extractor: (_text, match) => ({
+      value: { key: "blood_pressure", record: { value: parseFloat(match[1]), unit: `${match[1]}/${match[2]} mmHg` } },
+      action: "set",
+    }),
+  },
+  // Vitals: Weight
+  {
+    pattern: /\bweigh[ts]?\b.*?(\d+\.?\d*)\s*(lbs?|kg|pounds?|kilograms?)/i,
+    profileField: "vitals",
+    extractor: (_text, match) => ({
+      value: { key: "weight", record: { value: parseFloat(match[1]), unit: match[2].replace(/s$/, '') } },
+      action: "set",
+    }),
+  },
+  // Vitals: Blood glucose / blood sugar
+  {
+    pattern: /\b(?:blood\s*(?:sugar|glucose)|glucose)\b.*?(\d+\.?\d*)\s*(mg\/dl|mmol\/l)?/i,
+    profileField: "vitals",
+    extractor: (_text, match) => ({
+      value: { key: "blood_glucose", record: { value: parseFloat(match[1]), unit: match[2] || "mg/dL" } },
+      action: "set",
+    }),
+  },
+  // Allergies
+  {
+    pattern: /\ballerg(?:y|ic|ies)\s+(?:to\s+)?(.+)/i,
+    profileField: "allergies",
+    extractor: (_text, match) => ({
+      value: match[1].trim().replace(/[.,;].*$/, ''),
+      action: "add",
+    }),
+  },
+  // Medications (with dosage)
+  {
+    pattern: /\b(?:takes?|taking|prescribed|on)\s+(\w+)\s+(\d+\s*(?:mg|mcg|ml|units?)(?:\s+\w+)?)/i,
+    profileField: "medications",
+    extractor: (_text, match) => ({
+      value: { name: match[1], dosage: match[2].trim() },
+      action: "add",
+    }),
+  },
+  // Conditions
+  {
+    pattern: /\b(?:diagnosed\s+with|has|manages?|managing|living\s+with)\s+(.+?)(?:\s+for\s+|\s*[.,;]|$)/i,
+    profileField: "conditions",
+    extractor: (_text, match) => ({
+      value: match[1].trim(),
+      action: "add",
+    }),
+  },
+  // Goals
+  {
+    pattern: /\bgoal\b.*?(?:is|to)\s+(.+?)(?:\s*[.,;]|$)/i,
+    profileField: "goals",
+    extractor: (_text, match) => ({
+      value: match[1].trim(),
+      action: "add",
+    }),
+  },
+];
+
+export function createEmptyProfile(userId: string): UserProfile {
+  return {
+    userId,
+    conditions: [],
+    medications: [],
+    allergies: [],
+    vitals: {},
+    goals: [],
+    emergencyContacts: [],
+    customFields: {},
+  };
+}
 
 // ── Configuration ──
 
@@ -141,6 +298,7 @@ export interface VitamemConfig {
   provider?: ProviderName;
   apiKey?: string;
   model?: string;
+  extractionModel?: string;
   embeddingModel?: string;
   baseUrl?: string;
   llm?: LLMAdapter;
@@ -188,6 +346,10 @@ export interface VitamemConfig {
   // === Auto-Pinning ===
   /** Rules that automatically pin critical memories during extraction. Use HEALTH_AUTO_PIN_RULES for health domains. */
   autoPinRules?: AutoPinRule[];
+
+  // === Structured Extraction ===
+  /** Rules for extracting structured facts into the user profile. Use HEALTH_STRUCTURED_RULES for health domains. */
+  structuredExtractionRules?: StructuredExtractionRule[];
 }
 
 // ── Facade interface ──
@@ -248,9 +410,20 @@ export interface Vitamem {
     previousThreadId?: string;
     redirected?: boolean;
   }>;
-  triggerDormantTransition(threadId: string): Promise<void>;
+  triggerDormantTransition(threadId: string): Promise<{
+      memoriesSaved: number;
+      memoriesDeduped: number;
+      memoriesSuperseded: number;
+      totalExtracted: number;
+      profileFieldsUpdated: number;
+    }>;
   closeThread(threadId: string): Promise<void>;
   sweepThreads(): Promise<void>;
   deleteMemory(memoryId: string): Promise<void>;
   deleteUserData(userId: string): Promise<void>;
+
+  /** Get a user's structured profile. Returns null if profile storage is not supported or no profile exists. */
+  getProfile(userId: string): Promise<UserProfile | null>;
+  /** Update a user's structured profile (merge semantics). No-op if profile storage is not supported. */
+  updateProfile(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void>;
 }

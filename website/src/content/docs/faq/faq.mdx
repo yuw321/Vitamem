@@ -107,6 +107,28 @@ Each memory record contains:
 }
 ```
 
+## Memory Extraction Value
+
+**If extraction stores everything the user says, why not just keep raw messages?**
+
+In a single session, it can *seem* like extraction stores "everything" — but even within one conversation, extraction is distilling away conversational noise (greetings, filler, back-and-forth clarifications) into clean, structured facts. The real value, however, **compounds over time** across many sessions.
+
+Consider a health companion used daily:
+
+| Session | What the user says | What happens |
+|---------|-------------------|-------------|
+| **Session 1** | "I was diagnosed with type 2 diabetes about 3 years ago" | Extracted as `"Has Type 2 diabetes, diagnosed ~3 years ago"` (normalized, classified as `confirmed`) |
+| **Session 5** | User mentions diabetes again in passing | **Deduplicated** — cosine similarity ≥ 0.92 against existing memory, so nothing new is saved |
+| **Session 12** | "My A1C went from 7.4 to 6.8" | **Supersedes** the old A1C value in-place — memory store stays current without growing |
+| **Session 30** | 30 sessions later | Still the same lean set of ~15-20 refined facts, not 30 full conversation transcripts |
+
+Without extraction, you'd accumulate thousands of redundant raw messages over months of daily use. With it, you maintain a **concise, current, searchable fact store** that converges rather than grows linearly.
+
+Extraction also enables:
+- **Reliable deduplication** — comparing clean, normalized facts is far more accurate than comparing raw conversational messages
+- **Source classification** — each fact is tagged as `confirmed` (user stated directly) or `inferred` (derived from context), so downstream systems can weight confidence appropriately
+- **Customizable selectivity** — use `extractionPrompt` to control *what* gets extracted (e.g., only medical data, skip lifestyle chatter)
+
 ## Efficiency and Cost
 
 **How is this approach more efficient than traditional memory systems?**

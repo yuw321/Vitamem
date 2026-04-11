@@ -1,12 +1,14 @@
-import { Thread, Message, LLMAdapter, StorageAdapter, AutoPinRule, MemorySource } from "../types.js";
-import { extractMemories } from "../memory/extraction.js";
+import { Thread, Message, LLMAdapter, StorageAdapter, AutoPinRule, MemorySource, StructuredExtractionRule } from "../types.js";
+import { extractMemories, ExtractedFact } from "../memory/extraction.js";
 import { classifyFact } from "../memory/deduplication.js";
+import { classifyStructuredFacts, applyStructuredFacts } from "../memory/structured-extraction.js";
 
 export interface EmbeddingPipelineResult {
   memoriesSaved: number;
   memoriesDeduped: number;
   memoriesSuperseded: number;
   totalExtracted: number;
+  profileFieldsUpdated: number;
 }
 
 /**
@@ -76,23 +78,44 @@ export async function runEmbeddingPipeline(
   supersedeThreshold = 0.75,
   embeddingConcurrency = 5,
   autoPinRules: AutoPinRule[] = [],
+  structuredRules?: StructuredExtractionRule[],
 ): Promise<EmbeddingPipelineResult> {
   // Step 1: Extract facts
-  const extractedFacts = await extractMemories(messages, llm);
+  let extractedFacts: ExtractedFact[];
+  try {
+    extractedFacts = await extractMemories(messages, llm);
+  } catch (extractError) {
+    console.error('[vitamem:pipeline] extraction failed:', extractError);
+    extractedFacts = [];
+  }
   const totalExtracted = extractedFacts.length;
 
   if (totalExtracted === 0) {
-    return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted: 0 };
+    return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted: 0, profileFieldsUpdated: 0 };
+  }
+
+  // Step 1b: Classify structured facts (if rules provided)
+  let profileFieldsUpdated = 0;
+  let factsForEmbedding: ExtractedFact[] = extractedFacts;
+
+  if (structuredRules && structuredRules.length > 0 && storage.updateProfileField) {
+    const classified = classifyStructuredFacts(extractedFacts, structuredRules);
+    profileFieldsUpdated = await applyStructuredFacts(thread.userId, classified.structured, storage);
+    factsForEmbedding = classified.freeform;
+  }
+
+  if (factsForEmbedding.length === 0) {
+    return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted, profileFieldsUpdated };
   }
 
   // Step 2: Embed each fact (with concurrency limit)
   const embeddings = await mapWithConcurrency(
-    extractedFacts,
+    factsForEmbedding,
     (fact) => llm.embed(fact.content),
     embeddingConcurrency,
   );
 
-  const factsWithEmbeddings = extractedFacts.map((fact, i) => ({
+  const factsWithEmbeddings = factsForEmbedding.map((fact, i) => ({
     content: fact.content,
     source: fact.source,
     tags: fact.tags,
@@ -130,12 +153,16 @@ export async function runEmbeddingPipeline(
         const existing = existingMemories[classification.existingIndex];
         if (storage.updateMemory && existing?.id) {
           const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
+          // Preserve higher-confidence source: never downgrade "confirmed" → "inferred"
+          const preservedSource = existing.source === "confirmed" ? "confirmed" : fact.source ?? "inferred";
+          // Preserve pinned status: if existing was pinned, keep it pinned
+          const preservedPinned = existing.pinned || pinned;
           await storage.updateMemory(existing.id, {
             content: fact.content,
             embedding: fact.embedding,
-            source: fact.source ?? "inferred",
+            source: preservedSource,
             tags: fact.tags,
-            ...(pinned && { pinned: true }),
+            ...(preservedPinned && { pinned: true }),
           });
           memoriesSuperseded++;
         } else {
@@ -174,5 +201,5 @@ export async function runEmbeddingPipeline(
     }
   }
 
-  return { memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted };
+  return { memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted, profileFieldsUpdated };
 }

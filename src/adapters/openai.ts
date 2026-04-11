@@ -1,8 +1,10 @@
 import type { LLMAdapter, Message, MemorySource } from "../types.js";
+import { validateExtraction } from "../memory/extraction-schema.js";
 
 export interface OpenAIAdapterOptions {
   apiKey: string;
   chatModel?: string;
+  extractionModel?: string;
   embeddingModel?: string;
   baseUrl?: string;
   extractionPrompt?: string;
@@ -41,14 +43,25 @@ Focus on: health conditions, medications, lifestyle habits, goals, preferences, 
 Conversation:
 {conversation}
 
-Return a JSON array only (no markdown, no explanation):
-[{ "content": "brief factual statement", "source": "confirmed" | "inferred" }]
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "memories": [
+    { "content": "brief factual statement", "source": "confirmed", "tags": ["category"] },
+    { "content": "another fact derived from context", "source": "inferred", "tags": ["category"] }
+  ]
+}
 
 Guidelines:
+- Each memory must have: content (string), source ("confirmed" or "inferred"), and tags (array of strings)
 - "confirmed" = user directly stated this fact
 - "inferred" = you derived this from context
+- Tag each fact with a category: "condition", "medication", "lifestyle", "vital", "goal", "social", or "general"
 - Skip greetings, questions, and one-time events
-- Be specific (include numbers, dosages, dates when mentioned)`;
+- Be specific (include numbers, dosages, dates when mentioned)
+- When a value has been updated (e.g., A1C went from 7.4% to 6.8%), extract ONLY the current value as the fact. Do not create a separate fact for the previous value — the system tracks changes automatically.
+- Do not extract facts that merely restate information from earlier in the conversation. Focus on what is NEW or CHANGED.
+- For health metrics (A1C, blood pressure, weight, glucose, etc.), always extract the most recent value only.
+- Return empty memories array if no facts found: { "memories": [] }`;
 
 /**
  * Strip options that are only valid for streaming calls.
@@ -76,6 +89,7 @@ function cleanJsonResponse(raw: string): string {
  */
 export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
   const chatModel = opts.chatModel ?? DEFAULT_CHAT_MODEL;
+  const extractionModel = opts.extractionModel ?? chatModel;
   const embeddingModel = opts.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
   const extractionPrompt = opts.extractionPrompt ?? DEFAULT_EXTRACTION_PROMPT;
   const apiMode = opts.apiMode ?? 'completions';
@@ -184,20 +198,29 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
       let raw: string;
       if (apiMode === 'responses') {
         const response = await client.responses.create({
-          model: chatModel,
+          model: extractionModel,
           input: [{ role: "user", content: prompt }],
+          text: { format: { type: "json_object" } },
           ...safeOpts,
         });
-        raw = response.output_text ?? "[]";
+        raw = response.output_text ?? "{}";
       } else {
         const response = await client.chat.completions.create({
-          model: chatModel,
+          model: extractionModel,
           messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
           ...safeOpts,
         });
-        raw = response.choices[0].message.content ?? "[]";
+        raw = response.choices[0].message.content ?? "{}";
       }
-      return JSON.parse(cleanJsonResponse(raw));
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJsonResponse(raw));
+      } catch (parseError) {
+        console.warn('[vitamem:extraction] JSON parse failed, raw response:', raw.substring(0, 200));
+        return [];
+      }
+      return validateExtraction(parsed);
     },
 
     async embed(text: string): Promise<number[]> {

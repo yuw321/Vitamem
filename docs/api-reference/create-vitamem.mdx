@@ -58,6 +58,7 @@ Provide **either** a string shortcut **or** a `StorageAdapter` instance.
 | `closedTimeoutMs` | `number` | `2592000000` (30d) | Time in dormant before auto-close in `sweepThreads()` |
 | `embeddingConcurrency` | `number` | `5` | Max concurrent embedding API calls |
 | `autoRetrieve` | `boolean` | `false` | Inject relevant memories into every `chat()` call |
+| `structuredExtractionRules` | `StructuredExtractionRule[]` | — | Rules for classifying extracted facts into structured profile fields. Use `HEALTH_STRUCTURED_RULES` for health domains. |
 
 ## Usage Examples
 
@@ -226,3 +227,37 @@ Deletes all memories for a user. Use for GDPR right-to-erasure requests.
 ```typescript
 await mem.deleteUserData("user-123");
 ```
+
+---
+
+### `getProfile(userId)`
+
+Returns the user's structured profile, or `null` if profile storage is not supported or no profile exists.
+
+```typescript
+const profile = await mem.getProfile("user-123");
+if (profile) {
+  console.log(profile.allergies); // ['penicillin']
+  console.log(profile.vitals);    // { a1c: { value: 6.8, unit: '%' } }
+}
+```
+
+**Returns:** `UserProfile | null`
+
+---
+
+### `updateProfile(userId, updates)`
+
+Updates the user's structured profile with merge semantics. Creates the profile if it doesn't exist. No-op if the storage adapter does not support profiles.
+
+```typescript
+await mem.updateProfile("user-123", {
+  conditions: ["Type 2 diabetes"],
+  allergies: ["penicillin"],
+});
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `userId` | `string` | The user whose profile to update |
+| `updates` | `Partial<Omit<UserProfile, "userId">>` | Fields to merge into the profile |

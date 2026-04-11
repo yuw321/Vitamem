@@ -3,6 +3,7 @@ import { createOpenAIAdapter } from "./openai.js";
 
 export interface OllamaAdapterOptions {
   chatModel?: string;
+  extractionModel?: string;
   embeddingModel?: string;
   baseUrl?: string;
   extractionPrompt?: string;
@@ -34,6 +35,7 @@ export function createOllamaAdapter(opts?: OllamaAdapterOptions): LLMAdapter {
   return createOpenAIAdapter({
     apiKey: "ollama", // Ollama doesn't require an API key, but the SDK needs a value
     chatModel: opts?.chatModel ?? DEFAULT_CHAT_MODEL,
+    extractionModel: opts?.extractionModel,
     embeddingModel: opts?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL,
     baseUrl: opts?.baseUrl ?? DEFAULT_BASE_URL,
     extractionPrompt: opts?.extractionPrompt,

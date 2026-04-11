@@ -3,9 +3,25 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "redirects": [
-    { "source": "/docs/:section/:page.html", "destination": "/:section/:page", "permanent": true },
-    { "source": "/docs/:page.html", "destination": "/:page", "permanent": true },
-    { "source": "/demo.html", "destination": "/demo", "permanent": true },
-    { "source": "/index.html", "destination": "/", "permanent": true }
+    {
+      "source": "/docs/:section/:page.html",
+      "destination": "/:section/:page",
+      "permanent": true
+    },
+    {
+      "source": "/docs/:page.html",
+      "destination": "/:page",
+      "permanent": true
+    },
+    {
+      "source": "/demo.html",
+      "destination": "/demo",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "destination": "/",
+      "permanent": true
+    }
   ]
 }
