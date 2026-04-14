@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/vitamem"><img src="https://img.shields.io/npm/v/vitamem.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/vitamem"><img src="https://img.shields.io/npm/v/vitamem.svg?logo=npm" alt="npm version" /></a>
   <a href="https://github.com/yuw321/Vitamem/actions"><img src="https://img.shields.io/github/actions/workflow/status/yuw321/Vitamem/ci.yml?label=tests" alt="tests" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
   <a href="https://github.com/yuw321/Vitamem/discussions"><img src="https://img.shields.io/badge/discussions-GitHub-blue" alt="GitHub Discussions" /></a>
