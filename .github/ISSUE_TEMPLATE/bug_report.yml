@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a bug in Vitamem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of the bug.
+      placeholder: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal code or steps to reproduce the issue.
+      placeholder: |
+        1. Create vitamem with config...
+        2. Call chat()...
+        3. Trigger dormant transition...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Vitamem Version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: LLM Provider
+      options:
+        - OpenAI
+        - Anthropic
+        - Ollama
+        - Custom adapter
+    validations:
+      required: false
+
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage Adapter
+      options:
+        - Ephemeral (in-memory)
+        - Supabase
+        - Custom adapter
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, OS, relevant package versions.
+      placeholder: "Node 20.x, macOS 15, openai@4.x"
+    validations:
+      required: false
