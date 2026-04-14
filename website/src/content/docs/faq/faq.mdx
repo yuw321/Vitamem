@@ -42,7 +42,7 @@ This batched approach avoids redundant embedding calls during conversation.
 | **Dormant** | Facts extracted and embedded — conversation is complete |
 | **Closed** | Archived — terminal state, no further interaction |
 
-These states mirror natural care relationship patterns: a session starts, pauses, concludes, and eventually archives.
+These states mirror natural session-based patterns: a conversation starts, pauses, concludes, and eventually archives.
 
 **What triggers a thread to move between states?**
 
@@ -113,13 +113,13 @@ Each memory record contains:
 
 In a single session, it can *seem* like extraction stores "everything" — but even within one conversation, extraction is distilling away conversational noise (greetings, filler, back-and-forth clarifications) into clean, structured facts. The real value, however, **compounds over time** across many sessions.
 
-Consider a health companion used daily:
+Consider a coaching assistant used weekly:
 
 | Session | What the user says | What happens |
 |---------|-------------------|-------------|
-| **Session 1** | "I was diagnosed with type 2 diabetes about 3 years ago" | Extracted as `"Has Type 2 diabetes, diagnosed ~3 years ago"` (normalized, classified as `confirmed`) |
-| **Session 5** | User mentions diabetes again in passing | **Deduplicated** — cosine similarity ≥ 0.92 against existing memory, so nothing new is saved |
-| **Session 12** | "My A1C went from 7.4 to 6.8" | **Supersedes** the old A1C value in-place — memory store stays current without growing |
+| **Session 1** | "I'm learning Rust and want to ship my first CLI tool by March" | Extracted as `"Learning Rust"` and `"Goal: ship CLI tool by March"` (normalized, classified as `confirmed`) |
+| **Session 5** | User mentions Rust again in passing | **Deduplicated** — cosine similarity ≥ 0.92 against existing memory, so nothing new is saved |
+| **Session 12** | "I finished the CLI tool, now working on a web API" | **Supersedes** the old goal in-place — memory store stays current without growing |
 | **Session 30** | 30 sessions later | Still the same lean set of ~15-20 refined facts, not 30 full conversation transcripts |
 
 Without extraction, you'd accumulate thousands of redundant raw messages over months of daily use. With it, you maintain a **concise, current, searchable fact store** that converges rather than grows linearly.
@@ -145,6 +145,8 @@ For a typical 50-message session yielding 6 extracted facts:
 - **Naive**: 50 embed calls
 - **Vitamem**: 1 extraction call + 6 embed calls = ~7 calls (~8x fewer)
 - Deduplication removes an additional 30-50% of redundant facts across sessions
+
+But the bigger savings are in LLM input tokens. Retrieving only relevant memories (~300 tokens) instead of stuffing the entire memory store (~2,000+ tokens) into every chat call reduces LLM input costs by 6-7x per turn. At $2.50-15/1M tokens for LLM input (vs $0.02/1M for embedding), this is where the real money is saved.
 
 **What is the latency impact of autoRetrieve?**
 
@@ -207,14 +209,14 @@ Yes. Memories are **user-scoped**, not thread-scoped. Once extracted, a memory i
 
 **What is confirmed vs inferred source?**
 
-- **confirmed** — The user stated this fact directly (e.g., "I take metformin daily")
+- **confirmed** — The user stated this fact directly (e.g., "I prefer TypeScript")
 - **inferred** — Derived from assistant reasoning or conversation context (e.g., the assistant noted a pattern)
 
 The LLM extraction step assigns the source label during `extractMemories()`.
 
 **What are pinned memories?**
 
-Pinned memories are **always** included in retrieval results regardless of similarity score. Use them for critical context that must never be missed — such as drug allergies or chronic conditions.
+Pinned memories are **always** included in retrieval results regardless of similarity score. Use them for critical context that must never be missed — such as key preferences, allergies, or important constraints.
 
 ```ts
 await vm.pinMemory(memoryId);   // mark as pinned
@@ -237,13 +239,13 @@ const vm = await createVitamem({
 
 **How does tag filtering work?**
 
-Memories can be tagged during extraction (e.g., `"medication"`, `"condition"`, `"lifestyle"`). Use `filterTags` in `retrieve()` to scope searches to specific categories:
+Memories can be tagged during extraction (e.g., `"preference"`, `"goal"`, `"lifestyle"`). Use `filterTags` in `retrieve()` to scope searches to specific categories:
 
 ```ts
-const meds = await vm.retrieve({
+const goals = await vm.retrieve({
   userId: "user-1",
-  query: "current medications",
-  filterTags: ["medication"],
+  query: "current goals",
+  filterTags: ["goal"],
 });
 ```
 
@@ -390,11 +392,11 @@ User stores are isolated by `userId`, so performance scales horizontally. Key fa
 
 Yes. Implement the `StorageAdapter` interface for any backend. The interface defines methods like `createThread()`, `searchMemories()`, `saveMemory()`, etc. — see the API reference for the full contract.
 
-## Privacy, Security, and Health Compliance
+## Privacy, Security, and Compliance
 
 **Is Vitamem a medical device?**
 
-No. Vitamem is a developer library for building applications with persistent memory. It is not a medical device and makes no clinical claims.
+No. Vitamem is a developer library for building AI applications with persistent memory. It is not a medical device and makes no clinical claims.
 
 **What about HIPAA/GDPR compliance?**
 
@@ -405,11 +407,11 @@ Vitamem provides building blocks for compliance:
 
 Compliance is ultimately **your application's responsibility** — Vitamem provides the APIs, but you must implement appropriate policies, access controls, and audit trails.
 
-**How should I handle PHI?**
+**How should I handle sensitive data (PHI, PII, etc.)?**
 
 Your LLM provider and storage backend are your responsibility. Review your provider's data processing agreements and ensure your storage backend meets your compliance requirements. See `SECURITY.md` for guidance.
 
-**How does the system handle sensitive health information?**
+**Where does user data flow?**
 
 Data flows through two channels that you control:
 
@@ -442,7 +444,7 @@ mem0 uses a **utility pattern** — discrete `add()` and `search()` operations w
 - **Intermediary mode** (`chatWithUser()`) — handles thread management, LLM calls, and memory automatically
 - **Utility mode** (`retrieve()` + your own LLM) — use Vitamem purely for memory storage and retrieval
 
-Key difference: mem0 extracts per-add (higher cost, immediate availability). Vitamem batches extraction at the dormant transition (lower cost, delayed availability). Vitamem is purpose-built for health and care relationship workflows.
+Key difference: mem0 extracts per-add (higher cost, immediate availability). Vitamem batches extraction at the dormant transition (lower cost, delayed availability). Vitamem is purpose-built for session-based workflows where conversations have a natural lifecycle.
 
 **Can I use Vitamem without the intermediary pattern?**
 
@@ -457,7 +459,7 @@ const thread = await vm.createThread({ userId: "user-1" });
 // Retrieve memories to inject into your own LLM call
 const memories = await vm.retrieve({
   userId: "user-1",
-  query: "patient medications",
+  query: "user preferences and context"
 });
 
 // Call your own LLM with the retrieved context
@@ -469,11 +471,11 @@ const response = await myLLM.chat([
 
 **Why would I choose Vitamem over other memory libraries?**
 
-1. **Thread lifecycle mirrors clinical workflows** — active, cooling, dormant, closed states map naturally to care sessions
-2. **Batch extraction at dormant saves 85-90% embedding costs** — vs. per-message embedding
+1. **Thread lifecycle mirrors session-based workflows** — active, cooling, dormant, closed states map naturally to any AI that interacts in sessions (health check-ins, coaching calls, support tickets, tutoring sessions)
+2. **Batch extraction at dormant saves ~8x on embedding costs** — vs. per-message embedding. Combined with selective retrieval (only relevant memories injected per chat, not the full store), total token costs stay flat even as the memory store grows.
 3. **Confirmed/inferred source distinction** — know whether a fact came directly from the user or was derived
-4. **Pinned memories for critical health context** — allergies, conditions, and medications are never missed
-5. **Health compliance building blocks** — `deleteUserData()`, `deleteMemory()`, user-scoped isolation
+4. **Pinned memories for critical context** — preferences, constraints, and important facts are never missed
+5. **Privacy building blocks** — `deleteUserData()`, `deleteMemory()`, user-scoped isolation
 
 **Does Vitamem act as an intermediary?**
 

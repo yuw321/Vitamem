@@ -1,0 +1,206 @@
+---
+title: "Memory Formatting"
+description: "How Vitamem structures memory context for LLM injection with priority signals, chronological grouping, and cache-friendly layout."
+sidebar:
+  order: 8
+---
+
+# Memory Formatting
+
+When Vitamem injects memories into a chat context, the format matters. A flat bullet list of facts gives the LLM no signal about what is critical versus incidental, no temporal structure, and no opportunity for prefix caching. Vitamem's **memory formatting** system addresses all three with priority signaling, chronological grouping, and cache-friendly context separation.
+
+## Priority Signaling
+
+Each memory line is prefixed with a priority marker based on the memory's source and pinned status:
+
+| Marker | Condition | Meaning |
+|--------|-----------|---------|
+| `[CRITICAL]` | Pinned **and** confirmed | Safety-critical information that must never be ignored |
+| `[IMPORTANT]` | Confirmed (not pinned) | Facts directly stated by the user |
+| `[INFO]` | Inferred | Facts derived from assistant messages or indirect context |
+
+These markers give the LLM clear guidance on how much weight to place on each memory. A `[CRITICAL]` pinned fact should influence every response, while an `[INFO]` lifestyle preference is context that can be considered but not relied upon.
+
+### How Priority Is Determined
+
+The priority logic follows a simple hierarchy:
+
+```
+if (memory.pinned && memory.source === "confirmed") → [CRITICAL]
+if (memory.source === "confirmed")                  → [IMPORTANT]
+otherwise                                           → [INFO]
+```
+
+Pinned memories that are inferred (rare but possible) still show as `[INFO]` with pinned status — the `[CRITICAL]` marker is reserved for the highest-confidence combination of user-confirmed and explicitly pinned.
+
+## Chronological Grouping
+
+Retrieved memories are sorted by `createdAt` in ascending order and grouped under **month/year headers**:
+
+```
+=== Retrieved Memories ===
+--- January 2025 ---
+- [IMPORTANT] A1C was 7.4% (mentioned 2025-01-10) (confirmed)
+- [INFO] Seems concerned about diet management (inferred)
+--- March 2025 ---
+- [IMPORTANT] Started walking 30 minutes daily (mentioned 2025-03-05) (confirmed)
+--- June 2025 ---
+- [IMPORTANT] A1C improved to 6.8% (mentioned 2025-06-20) (confirmed)
+- [CRITICAL] Allergic to sulfa antibiotics (confirmed, pinned)
+```
+
+This grouping gives the LLM a temporal narrative — it can see how a user's health has progressed over time rather than getting a jumbled list of facts. Each memory line also includes the specific date if temporal encoding is active, providing both coarse (month/year) and fine (exact date) temporal context.
+
+### Date Display
+
+When chronological retrieval is enabled, each memory line includes the date it was mentioned — but only if the date is not already embedded in the content. The formatter checks for an existing `(mentioned YYYY-MM-DD)` suffix to avoid duplication.
+
+## Cache-Friendly Context
+
+LLM APIs like OpenAI and Anthropic support **prefix caching** — if the beginning of a prompt is identical across requests, the provider can skip re-processing those tokens. Vitamem's cache-friendly mode structures the context to maximize cache hits.
+
+When `cacheableContext` is enabled, the formatted output is split into two sections:
+
+1. **Stable prefix** — profile data and pinned memories (rarely changes between requests)
+2. **Dynamic suffix** — retrieved memories (changes with each query)
+
+A separator comment marks the boundary:
+
+```
+=== User Profile ===
+Conditions: Type 2 diabetes
+Medications: metformin 500mg (twice daily)
+Allergies: penicillin
+
+=== Critical Memories (Always Active) ===
+- [CRITICAL] Allergic to penicillin (confirmed, pinned)
+- [CRITICAL] Takes metformin 500mg twice daily (confirmed, pinned)
+
+<!-- stable context above, dynamic below -->
+
+=== Retrieved Memories ===
+--- March 2025 ---
+- [IMPORTANT] A1C improved to 7.0% (mentioned 2025-03-15) (confirmed)
+- [INFO] Mentioned increased exercise routine (inferred)
+```
+
+Everything above the separator is stable across conversations — the user's profile and pinned facts don't change between messages. The LLM provider can cache this prefix and only process the dynamic suffix, reducing latency and cost for subsequent requests.
+
+## Configuration
+
+All three formatting features are controlled via `VitamemConfig`:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+
+  // Formatting options
+  prioritySignaling: true,        // default: true
+  chronologicalRetrieval: true,    // default: true
+  cacheableContext: false,         // default: false (opt-in)
+});
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `prioritySignaling` | `boolean` | `true` | Prepend `[CRITICAL]`, `[IMPORTANT]`, or `[INFO]` markers to each memory line |
+| `chronologicalRetrieval` | `boolean` | `true` | Sort memories by date and group under month/year headers |
+| `cacheableContext` | `boolean` | `false` | Split output into stable prefix and dynamic suffix with a separator comment |
+
+### Disabling Features
+
+If you want a simpler flat list without priority markers or date grouping:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+  prioritySignaling: false,
+  chronologicalRetrieval: false,
+});
+```
+
+This produces a plain list:
+
+```
+=== Retrieved Memories ===
+- A1C was 7.4% (confirmed)
+- Started walking 30 minutes daily (confirmed)
+- Seems concerned about diet management (inferred)
+```
+
+## Custom Formatters
+
+If the built-in formatter does not fit your needs, you can replace it entirely with a custom function:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+  memoryContextFormatter: (memories, query) => {
+    // Your custom formatting logic
+    const lines = memories.map((m) => {
+      const badge = m.pinned ? "PIN" : m.source.toUpperCase();
+      return `[${badge}] ${m.content}`;
+    });
+    return `Context for "${query}":\n${lines.join("\n")}`;
+  },
+});
+```
+
+The custom formatter receives the full array of `MemoryMatch` objects and the user's query string. It returns a plain string that is injected as a system message in the chat context.
+
+:::note
+When using a custom formatter, the `prioritySignaling`, `chronologicalRetrieval`, and `cacheableContext` options are ignored — your formatter has full control over the output format. Profile data is still injected as a separate system message.
+:::
+
+## Output Structure
+
+The default formatter produces up to four sections, depending on available data:
+
+### 1. User Profile (if profile data exists)
+
+```
+=== User Profile ===
+Conditions: Type 2 diabetes
+Medications: metformin 500mg (twice daily)
+Allergies: penicillin
+Vitals: a1c: 6.8% (previous: 7.0%)
+Goals: Lower A1C below 6.5%
+```
+
+### 2. Critical Memories (if any pinned memories exist)
+
+```
+=== Critical Memories (Always Active) ===
+- [CRITICAL] Allergic to penicillin (confirmed, pinned)
+- [CRITICAL] Do not prescribe sulfa antibiotics (confirmed, pinned)
+```
+
+### 3. Cache Separator (if `cacheableContext` is enabled)
+
+```
+<!-- stable context above, dynamic below -->
+```
+
+### 4. Retrieved Memories
+
+```
+=== Retrieved Memories ===
+--- January 2025 ---
+- [IMPORTANT] A1C was 7.4% (mentioned 2025-01-10) (confirmed)
+--- April 2025 ---
+- [IMPORTANT] A1C improved to 7.0% (mentioned 2025-04-12) (confirmed)
+- [INFO] Mentioned feeling better about diet (inferred)
+```
+
+Sections 1 and 2 form the stable prefix (good for caching). Section 4 is the dynamic suffix that changes per query.

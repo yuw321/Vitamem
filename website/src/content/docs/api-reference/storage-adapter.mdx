@@ -249,6 +249,26 @@ If you construct the Supabase client yourself and pass a `SupabaseAdapter` insta
 
 ---
 
+## Vitals Same-Value Guard
+
+When updating a vital sign through the structured extraction pipeline, the storage layer includes a **same-value guard**: if the new value equals the current value, the write is skipped entirely.
+
+This guard exists to preserve the `previousValue` history trail. Without it, re-extracting the same vital value (e.g., from an AI echo) would overwrite `previousValue` with the current value, destroying the change history.
+
+### Example
+
+1. A user reports: _"My A1C went from 7.4% to 6.8%."_
+   - Profile is updated: `value: "6.8%"`, `previousValue: "7.4%"`
+2. Later, the AI says: _"Great that your A1C is 6.8%!"_
+   - Without the guard: profile would be updated to `value: "6.8%"`, `previousValue: "6.8%"` — the 7.4% history is lost
+   - **With the guard**: the write is skipped because `6.8% === 6.8%`, preserving `previousValue: "7.4%"`
+
+:::note
+This guard works in tandem with [role-aware extraction](/concepts/memory-extraction/#role-aware-extraction). The extraction pipeline avoids re-extracting echoed values in the first place, and the same-value guard acts as a second safety net at the storage layer.
+:::
+
+---
+
 ## Choosing an Adapter
 
 | Adapter | Persistence | Vector search | GDPR methods | Use case |

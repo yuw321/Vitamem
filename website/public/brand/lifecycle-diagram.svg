@@ -13,6 +13,8 @@
       .box-sublabel-dark { font-family: 'SF Mono', monospace; font-size: 11px; fill: #5b6b8a; text-anchor: middle; }
       .arrow { fill: none; stroke: #8e9ab5; stroke-width: 2; stroke-linecap: round; marker-end: url(#arrowhead); }
       .arrow-memory { fill: none; stroke: #3b7a57; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 6 4; marker-end: url(#arrowhead-green); }
+      .arrow-reactivate { fill: none; stroke: #1a1f36; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 6 4; marker-end: url(#arrowhead-dark); }
+      .reactivate-label { font-family: 'SF Mono', monospace; font-size: 11px; fill: #1a1f36; text-anchor: middle; font-style: italic; }
       .timeout { font-family: 'SF Mono', monospace; font-size: 11px; fill: #8e9ab5; text-anchor: middle; }
       .note { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 12px; fill: #5b6b8a; text-anchor: middle; font-style: italic; }
     </style>
@@ -21,6 +23,9 @@
     </marker>
     <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#3b7a57" />
+    </marker>
+    <marker id="arrowhead-dark" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1a1f36" />
     </marker>
   </defs>
 
@@ -55,6 +60,10 @@
   <rect class="box box-closed" x="700" y="100" width="150" height="70" />
   <text class="box-label-dark" x="775" y="138">Closed</text>
   <text class="box-sublabel-dark" x="775" y="155">archived</text>
+
+  <!-- Reactivate: Cooling → Active (curved arrow below) -->
+  <path class="arrow-reactivate" d="M 300,170 L 300,195 Q 300,205 290,205 L 155,205 Q 145,205 145,195 L 145,170" />
+  <text class="reactivate-label" x="225" y="220">reactivate (new message)</text>
 
   <!-- Embedding computation note on Dormant -->
   <line class="arrow-memory" x1="555" y1="170" x2="555" y2="230" />

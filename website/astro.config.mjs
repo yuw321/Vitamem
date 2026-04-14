@@ -7,7 +7,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Vitamem',
-			description: 'Memory for AI health companions',
+			description: 'Lifecycle-aware long-term memory for AI applications',
 			favicon: '/brand/logo-concept-a.svg',
 			social: [
 				{

@@ -161,7 +161,7 @@ const { reply } = await mem.chat({
 Vitamem ties threads together through the `userId` field. One user can have many threads, and memories from all threads are pooled together. When you call `retrieve()`, it searches across all of a user's memories regardless of which thread they came from.
 
 ```
-User "patient-456"
+User "user-456"
   ├── Thread A (closed) ── memories: diabetes, metformin
   ├── Thread B (closed) ── memories: exercise routine, sleep issues
   ├── Thread C (dormant) ── memories: started physical therapy
@@ -172,11 +172,11 @@ When Thread D calls `retrieve()`, it searches across memories from Threads A, B,
 
 ```typescript
 // Each session creates a new thread for the same user
-const thread = await mem.createThread({ userId: "patient-456" });
+const thread = await mem.createThread({ userId: "user-456" });
 
 // All past memories are available for retrieval
 const memories = await mem.retrieve({
-  userId: "patient-456",
+  userId: "user-456",
   query: "current medications",
 });
 ```

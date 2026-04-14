@@ -100,7 +100,7 @@ const context = memories
 const { reply } = await mem.chat({
   threadId: thread.id,
   message: userMessage,
-  systemPrompt: `Patient context:\n${context}\n\nRespond as a caring health companion.`,
+  systemPrompt: `User context:\n${context}\n\nRespond as a caring health companion.`,
 });
 ```
 
@@ -143,8 +143,64 @@ const { reply } = await mem.chat({
 // 4. User: "What about my exercise routine?"
 ```
 
+## Memory Formatting
+
+When memories are injected into the LLM context (via `autoRetrieve` or manual retrieval), Vitamem can format them to maximize usefulness and minimize token waste. Three formatting features are available:
+
+### Priority Signaling
+
+Memories can be prefixed with priority markers so the LLM knows which facts are most important:
+
+```
+[CRITICAL] Allergic to penicillin (confirmed)
+[IMPORTANT] Takes metformin 500mg twice daily (confirmed)
+[INFO] Prefers morning check-ins (inferred)
+```
+
+Enable with `prioritySignaling: true`. Pinned memories are marked `[CRITICAL]`, confirmed facts are `[IMPORTANT]`, and inferred facts are `[INFO]`.
+
+### Chronological Grouping
+
+Memories can be sorted by date and grouped under month/year headers, giving the LLM a timeline view:
+
+```
+--- March 2026 ---
+- Has Type 2 diabetes (mentioned 2026-03-15)
+- Takes metformin 500mg twice daily (mentioned 2026-03-15)
+
+--- April 2026 ---
+- A1C improved to 6.5 (mentioned 2026-04-02)
+```
+
+Enable with `chronologicalRetrieval: true`.
+
+### Cache-Friendly Context
+
+To optimize for LLM prefix caching (supported by OpenAI, Anthropic, and others), Vitamem can split memory context into a **stable prefix** and a **dynamic suffix**:
+
+- **Stable prefix**: User profile + pinned memories (rarely changes between calls)
+- **Dynamic suffix**: Query-retrieved memories (changes per message)
+
+This layout maximizes cache hits on the stable portion, reducing latency and cost for repeated interactions. Enable with `cacheableContext: true`.
+
+### Configuration
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  autoRetrieve: true,
+  prioritySignaling: true,
+  chronologicalRetrieval: true,
+  cacheableContext: true,
+});
+```
+
+See [Memory Formatting](/concepts/memory-formatting/) for details on how each option affects the injected context.
+
 ## Performance Considerations
 
-Each `chat()` call with `autoRetrieve` makes one additional API call to your embedding provider (`llm.embed()`). For OpenAI's `text-embedding-3-small`, this adds roughly 10-50ms of latency and costs $0.00002 per call (as of early 2026).
+Each `chat()` call with `autoRetrieve` makes one additional API call to your embedding provider (`llm.embed()`). For OpenAI's `text-embedding-3-small`, this adds roughly 10-50ms of latency and costs $0.00002 per call (as of early 2026). While embedding costs are negligible at this scale, the real efficiency gain is in LLM input tokens — autoRetrieve injects only the most relevant memories rather than dumping the entire memory store into context. This keeps per-turn LLM costs flat regardless of how many memories exist.
 
 If latency or cost is a concern, prefer the manual approach: call `retrieve()` once when the session starts and pass the result as `systemPrompt` for all subsequent messages in that session.

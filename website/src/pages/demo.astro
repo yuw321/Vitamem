@@ -5,10 +5,10 @@ const html = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vitamem Demo — Health Companion</title>
+    <title>Vitamem Demo — Memory Lifecycle in Action</title>
     <meta
       name="description"
-      content="See Vitamem in action: a simulated AI health companion that extracts memories from a conversation and recalls them in the next session."
+      content="See Vitamem in action: watch it extract facts from a conversation, deduplicate them, and recall them in the next session — across any domain."
     />
     <style is:global>
       *,
@@ -695,6 +695,35 @@ const html = `<!doctype html>
         color: #fcd34d;
       }
 
+      /* ── Scenario picker ── */
+      .scenario-picker {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 20px;
+        flex-wrap: wrap;
+      }
+      .scenario-btn {
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 18px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--silver);
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .scenario-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--snow);
+      }
+      .scenario-btn.active {
+        background: var(--teal-glow);
+        border-color: rgba(20, 184, 166, 0.3);
+        color: var(--teal-lt);
+      }
+
       /* ── Disclaimer ── */
       .disclaimer {
         max-width: 1100px;
@@ -766,11 +795,16 @@ const html = `<!doctype html>
     <!-- Page header -->
     <div class="page-header">
       <div class="demo-badge">Interactive Demo</div>
-      <h1>Health Companion Memory in Action</h1>
+      <h1>Memory Lifecycle in Action</h1>
       <p>
         Watch Vitamem extract facts from a conversation, deduplicate them, and
-        recall them in the next session — all without a database.
+        recall them in the next session — the same lifecycle works across any domain.
       </p>
+      <div class="scenario-picker" id="scenarioPicker">
+        <button class="scenario-btn active" onclick="switchScenario('developer')">Developer Assistant</button>
+        <button class="scenario-btn" onclick="switchScenario('coaching')">Coaching Assistant</button>
+        <button class="scenario-btn" onclick="switchScenario('health')">Health Companion</button>
+      </div>
       <div class="note-bar">
         <span>★</span> Simulated demo — no backend, no API calls. Shows exact
         Vitamem behavior.
@@ -792,7 +826,7 @@ const html = `<!doctype html>
           <div class="how-step-num">02 · End session</div>
           <div class="how-step-text">
             <strong>LLM extracts facts</strong>
-            One LLM call pulls structured health facts from the full
+            One LLM call pulls structured facts from the full
             conversation.
           </div>
         </div>
@@ -821,7 +855,7 @@ const html = `<!doctype html>
         <div class="chat-panel" id="chatPanel">
           <div class="chat-header">
             <div class="chat-title">
-              Health Companion
+              <span id="chatLabel">Developer Assistant</span>
               <span class="thread-state-badge state-active" id="stateBadge"
                 >Active</span
               >
@@ -856,7 +890,7 @@ const html = `<!doctype html>
             <div class="thread-info">
               <div class="thread-row">
                 <span class="thread-label">User</span>
-                <span class="thread-value">sarah@example.com</span>
+                <span class="thread-value">alex@example.com</span>
               </div>
               <div class="thread-row">
                 <span class="thread-label">State</span>
@@ -942,40 +976,39 @@ const html = `<!doctype html>
           >View full examples &rarr;</a
         >
       </div>
-      <pre><code><span class="kw">import</span> { createVitamem, InMemoryAdapter } <span class="kw">from</span> <span class="str">'vitamem'</span>;
+      <pre><code><span class="kw">import</span> { createVitamem } <span class="kw">from</span> <span class="str">'vitamem'</span>;
 
-<span class="cmt">// Session 1: first check-in</span>
-<span class="kw">const</span> mem = <span class="kw">await</span> <span class="fn">createVitamem</span>({ llm, storage: <span class="kw">new</span> <span class="fn">InMemoryAdapter</span>() });
-<span class="kw">const</span> thread = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'sarah'</span> });
+<span class="cmt">// 1. Initialize with a provider shortcut</span>
+<span class="kw">const</span> mem = <span class="kw">await</span> <span class="fn">createVitamem</span>({
+  provider: <span class="str">'openai'</span>,
+  apiKey: process.env.OPENAI_API_KEY,
+  storage: <span class="str">'ephemeral'</span>,
+  autoRetrieve: <span class="num">true</span>,
+});
 
-<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"I've had Type 2 diabetes for 3 years"</span> });
-<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"Taking metformin 1000mg twice a day"</span> });
-<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"My last A1C was 7.4, goal is under 7.0"</span> });
+<span class="cmt">// 2. Chat — facts are stored in the thread</span>
+<span class="kw">const</span> thread = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'user-123'</span> });
+<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread.id, message: <span class="str">"I prefer dark mode, use TypeScript, and deploy on Vercel."</span> });
 
-<span class="cmt">// End session: 1 LLM call extracts facts, then ~6 embedding calls (not 1 per message)</span>
+<span class="cmt">// 3. Session rests → extract facts, embed once, deduplicate, save</span>
 <span class="kw">await</span> mem.<span class="fn">triggerDormantTransition</span>(thread.id);
 
-<span class="cmt">// Session 2: return visit</span>
-<span class="kw">const</span> memories = <span class="kw">await</span> mem.<span class="fn">retrieve</span>({
-  userId: <span class="str">'sarah'</span>,
-  query: <span class="str">'diabetes medications'</span>,
-  limit: <span class="num">10</span>,
+<span class="cmt">// 4. Next session — relevant memories appear automatically</span>
+<span class="kw">const</span> newThread = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'user-123'</span> });
+<span class="kw">const</span> { reply } = <span class="kw">await</span> mem.<span class="fn">chat</span>({
+  threadId: newThread.id,
+  message: <span class="str">"What tools do I use?"</span>,
 });
-<span class="cmt">// [ { content: "Has Type 2 diabetes (3 years)", source: "confirmed" }, ... ]</span>
-
-<span class="kw">const</span> thread2 = <span class="kw">await</span> mem.<span class="fn">createThread</span>({ userId: <span class="str">'sarah'</span> });
-<span class="kw">await</span> mem.<span class="fn">chat</span>({ threadId: thread2.id, message: <span class="str">"Hey, I'm back!"</span> });
-<span class="cmt">// AI: "Welcome back! Last time we talked about your A1C goal of 7.0..."</span></code></pre>
+<span class="cmt">// Vitamem auto-retrieves: "Prefers TypeScript", "Deploys on Vercel", ...</span></code></pre>
     </div>
 
     <!-- Disclaimer -->
     <div class="disclaimer">
       <div class="disclaimer-inner">
-        <strong>Not a medical device.</strong> Vitamem is a developer library
-        for memory management. It is not intended to diagnose, treat, cure, or
-        prevent any medical condition. Applications using Vitamem should include
-        their own privacy policies, data handling disclosures, and appropriate
-        safety disclaimers.
+        <strong>Note:</strong> Vitamem is a developer library for AI memory
+        management, not a medical device. If you build health-related
+        applications, you are responsible for compliance (HIPAA, GDPR, etc.)
+        and safety disclosures.
         <a href="/legal/disclaimer/">Full disclaimer &rarr;</a>
       </div>
     </div>
@@ -1001,76 +1034,98 @@ const html = `<!doctype html>
         &middot; MIT License
       </p>
       <p style="margin-top: 6px">
-        Built for developers building health AI that actually remembers.
+        Built for developers building AI that actually remembers.
       </p>
     </footer>
 
     <script is:inline>
-      // ── Demo data ──────────────────────────────────────────────────────────────
+      // ── Scenario data ─────────────────────────────────────────────────────────
 
-      var MEMORIES = [
-        {
-          content: "Has Type 2 diabetes, diagnosed approximately 3 years ago",
-          source: "confirmed",
+      var SCENARIOS = {
+        developer: {
+          name: "Developer Assistant",
+          user: "alex@example.com",
+          avatar: "A",
+          memories: [
+            { content: "Prefers TypeScript over JavaScript", source: "confirmed" },
+            { content: "Deploys projects on Vercel", source: "confirmed" },
+            { content: "Working on a React Native mobile app", source: "confirmed" },
+            { content: "Prefers dark mode in all editors and tools", source: "confirmed" },
+            { content: "Morning standups at 9am with the team", source: "confirmed" },
+            { content: "Likely values fast iteration and modern tooling", source: "inferred" },
+          ],
+          session1: [
+            { role: "user", text: "Hey! I'm setting up a new project. I always use TypeScript — can't go back to plain JS." },
+            { role: "ai", text: "Great choice! TypeScript catches so many bugs at compile time. What kind of project are you starting?" },
+            { role: "user", text: "A React Native mobile app. I deploy everything on Vercel, and I use dark mode everywhere — even my terminal." },
+            { role: "ai", text: "Nice stack! Vercel is solid for the web side of things. Are you working solo on this or with a team?" },
+            { role: "user", text: "Small team — we do standups at 9am every morning. Trying to ship the MVP by end of Q2." },
+            { role: "ai", text: "Sounds like a tight but doable timeline with daily syncs. <em>I'll remember your setup and preferences for next time.</em>" },
+          ],
+          session2: [
+            { role: "user", text: "Hey, quick question about my project." },
+            { role: "ai", text: "Welcome back! <em>I remember you're building a React Native app, deploying on Vercel, and working in TypeScript.</em> What's on your mind?" },
+            { role: "user", text: "I'm thinking about switching our bundler to Bun. Worth it?" },
+            { role: "ai", text: "Given <em>your preference for fast tooling and modern stacks</em>, Bun could be a great fit — it's significantly faster for installs and scripts. The React Native compatibility is improving too. Want me to walk through the migration steps?" },
+          ],
         },
-        { content: "Takes metformin 1000mg twice daily", source: "confirmed" },
-        {
-          content: "Most recent A1C: 7.4 — target is below 7.0",
-          source: "confirmed",
+        coaching: {
+          name: "Coaching Assistant",
+          user: "jordan@example.com",
+          avatar: "J",
+          memories: [
+            { content: "Training for first marathon", source: "confirmed" },
+            { content: "Runs Monday, Wednesday, and Saturday mornings", source: "confirmed" },
+            { content: "Previous right knee injury (runner's knee, 2024)", source: "confirmed" },
+            { content: "Goal: finish a marathon under 4 hours", source: "confirmed" },
+            { content: "Following a 16-week training plan", source: "confirmed" },
+            { content: "Prefers morning runs before work", source: "inferred" },
+          ],
+          session1: [
+            { role: "user", text: "Hi! I'm training for my first marathon and could use some help staying on track." },
+            { role: "ai", text: "That's an exciting goal! How long have you been running, and do you have a target time in mind?" },
+            { role: "user", text: "I've been running for about 2 years. I want to finish under 4 hours. I run Mon/Wed/Sat mornings." },
+            { role: "ai", text: "A sub-4-hour first marathon is ambitious but very doable with consistent training. Any injuries I should know about?" },
+            { role: "user", text: "I had runner's knee in my right knee last year. It's fine now, but I'm careful. I'm following a 16-week plan." },
+            { role: "ai", text: "Smart to be cautious with that knee history. A 16-week plan with your 3-day schedule gives you great structure. <em>I'll keep track of all of this so we can build on it.</em>" },
+          ],
+          session2: [
+            { role: "user", text: "Just finished a half marathon yesterday as a training race!" },
+            { role: "ai", text: "Awesome! <em>I remember you're targeting a sub-4-hour full marathon and training Monday, Wednesday, Saturday.</em> How did the half go — and how's that right knee feeling?" },
+            { role: "user", text: "Finished in 1:52! Knee felt great the whole time." },
+            { role: "ai", text: "A 1:52 half is a strong indicator — <em>that pace projects to roughly a 3:55 marathon</em>, right in your sub-4 target zone. The knee holding up is the best news. You're in great shape for race day!" },
+          ],
         },
-        {
-          content: "Exercises Monday, Wednesday, Friday (30 min cardio)",
-          source: "confirmed",
+        health: {
+          name: "Health Companion",
+          user: "sarah@example.com",
+          avatar: "S",
+          memories: [
+            { content: "Has Type 2 diabetes, diagnosed approximately 3 years ago", source: "confirmed" },
+            { content: "Takes metformin 1000mg twice daily", source: "confirmed" },
+            { content: "Most recent A1C: 7.4 — target is below 7.0", source: "confirmed" },
+            { content: "Exercises Monday, Wednesday, Friday (30 min cardio)", source: "confirmed" },
+            { content: "Actively reducing carbohydrate intake to improve A1C", source: "inferred" },
+            { content: "Primary care doctor monitoring medication effectiveness", source: "inferred" },
+          ],
+          session1: [
+            { role: "user", text: "Hi! I've been managing Type 2 diabetes for about 3 years now." },
+            { role: "ai", text: "Hello! Thanks for sharing that with me. Living with diabetes takes a lot of daily attention — I'm glad you're here. How have things been going lately?" },
+            { role: "user", text: "I take metformin 1000mg twice a day. My last A1C was 7.4." },
+            { role: "ai", text: "That's really helpful context. An A1C of 7.4 — are you working toward a specific target with your doctor, or just keeping an eye on it?" },
+            { role: "user", text: "My doctor wants me to get it under 7.0. I exercise Mon/Wed/Fri and I've been cutting carbs." },
+            { role: "ai", text: "That's a solid routine — three days of exercise and reducing carbs are both evidence-backed ways to nudge A1C down. The 7.0 target is very achievable given what you're already doing. <em>I'll remember all of this for next time.</em>" },
+          ],
+          session2: [
+            { role: "user", text: "Hey, I'm back! Had a checkup yesterday." },
+            { role: "ai", text: "Welcome back! <em>I remember you've been working hard to get your A1C below 7.0</em> — you mentioned cutting carbs and exercising Monday, Wednesday, and Friday. How did the checkup go?" },
+            { role: "user", text: "A1C is now 6.8! Doctor was really happy." },
+            { role: "ai", text: "That is fantastic — <em>down from 7.4 to 6.8!</em> That's real, measurable progress. Your consistency with exercise and the dietary changes is clearly working. Did your doctor say anything about the metformin going forward?" },
+          ],
         },
-        {
-          content: "Actively reducing carbohydrate intake to improve A1C",
-          source: "inferred",
-        },
-        {
-          content: "Primary care doctor monitoring medication effectiveness",
-          source: "inferred",
-        },
-      ];
+      };
 
-      var SESSION1 = [
-        {
-          role: "user",
-          text: "Hi! I've been managing Type 2 diabetes for about 3 years now.",
-        },
-        {
-          role: "ai",
-          text: "Hello! Thanks for sharing that with me. Living with diabetes takes a lot of daily attention — I'm glad you're here. How have things been going lately?",
-        },
-        {
-          role: "user",
-          text: "I take metformin 1000mg twice a day. My last A1C was 7.4.",
-        },
-        {
-          role: "ai",
-          text: "That's really helpful context. An A1C of 7.4 — are you working toward a specific target with your doctor, or just keeping an eye on it?",
-        },
-        {
-          role: "user",
-          text: "My doctor wants me to get it under 7.0. I exercise Mon/Wed/Fri and I've been cutting carbs.",
-        },
-        {
-          role: "ai",
-          text: "That's a solid routine — three days of exercise and reducing carbs are both evidence-backed ways to nudge A1C down. The 7.0 target is very achievable given what you're already doing. <em>I'll remember all of this for next time.</em>",
-        },
-      ];
-
-      var SESSION2 = [
-        { role: "user", text: "Hey, I'm back! Had a checkup yesterday." },
-        {
-          role: "ai",
-          text: "Welcome back! <em>I remember you've been working hard to get your A1C below 7.0</em> — you mentioned cutting carbs and exercising Monday, Wednesday, and Friday. How did the checkup go?",
-        },
-        { role: "user", text: "A1C is now 6.8! Doctor was really happy." },
-        {
-          role: "ai",
-          text: "That is fantastic — <em>down from 7.4 to 6.8!</em> That's real, measurable progress. Your consistency with exercise and the dietary changes is clearly working. Did your doctor say anything about the metformin going forward?",
-        },
-      ];
+      var activeScenario = "developer";
 
       // ── State ─────────────────────────────────────────────────────────────────
 
@@ -1080,54 +1135,55 @@ const html = `<!doctype html>
       var msgCount = 0;
       var memCount = 0;
 
+      function sc() { return SCENARIOS[activeScenario]; }
+
+      // ── Scenario switching ────────────────────────────────────────────────────
+
+      function switchScenario(key) {
+        if (key === activeScenario && phase === "intro") return;
+        activeScenario = key;
+        var btns = document.querySelectorAll(".scenario-btn");
+        btns.forEach(function (b) { b.classList.remove("active"); });
+        var labels = { developer: "Developer Assistant", coaching: "Coaching Assistant", health: "Health Companion" };
+        btns.forEach(function (b) { if (b.textContent === labels[key]) b.classList.add("active"); });
+        replayDemo();
+      }
+
       // ── Entry point ───────────────────────────────────────────────────────────
 
       function nextStep() {
         if (phase === "intro") {
           phase = "session1";
-          document.getElementById("nextBtn").textContent =
-            "\u25B6 Next message";
+          document.getElementById("nextBtn").textContent = "\u25B6 Next message";
           playSession1();
           return;
         }
-        if (phase === "session1") {
-          playSession1();
-          return;
-        }
-        if (phase === "endSession") {
-          endSession();
-          return;
-        }
-        if (phase === "newSession") {
-          startSession2();
-          return;
-        }
-        if (phase === "session2") {
-          playSession2();
-          return;
-        }
+        if (phase === "session1") { playSession1(); return; }
+        if (phase === "endSession") { endSession(); return; }
+        if (phase === "newSession") { startSession2(); return; }
+        if (phase === "session2") { playSession2(); return; }
       }
 
       function playSession1() {
-        if (s1idx >= SESSION1.length) {
+        var data = sc().session1;
+        if (s1idx >= data.length) {
           phase = "endSession";
           var btn = document.getElementById("nextBtn");
           btn.textContent = "\u25A0 End Session";
           btn.className = "play-btn btn-amber";
           return;
         }
-        var msg = SESSION1[s1idx];
+        var msg = data[s1idx];
         s1idx++;
 
         if (msg.role === "user") {
           disableNext();
           appendMessage("user", msg.text, function () {
             bumpMsgCount();
-            // Peek at next: if AI, show typing then deliver
             setTimeout(function () {
               showTyping(function () {
-                if (s1idx < SESSION1.length && SESSION1[s1idx].role === "ai") {
-                  var aiMsg = SESSION1[s1idx];
+                if (s1idx < data.length && data[s1idx].role === "ai") {
+                  var aiMsg = data[s1idx];
                   s1idx++;
                   appendMessage("ai", aiMsg.text, function () {
                     bumpMsgCount();
@@ -1162,7 +1218,10 @@ const html = `<!doctype html>
       }
 
       function showPipeline() {
+        var memoryCount = sc().memories.length;
         document.getElementById("pipelineCard").classList.add("show");
+        document.querySelector("#pStep2 .step-sub").textContent = memoryCount + " calls \u00b7 extracted facts only";
+        document.querySelector("#pStep4 .step-sub").textContent = memoryCount + " memories stored";
         runPipelineSteps(
           [
             { id: "pStep1", delay: 700 },
@@ -1170,7 +1229,7 @@ const html = `<!doctype html>
               id: "pStep2",
               delay: 1500,
               onDone: function () {
-                document.getElementById("infoEmbedCalls").textContent = "6";
+                document.getElementById("infoEmbedCalls").textContent = String(memoryCount);
               },
             },
             { id: "pStep3", delay: 900 },
@@ -1206,7 +1265,7 @@ const html = `<!doctype html>
 
       function showMemories() {
         document.getElementById("memEmpty").style.display = "none";
-        MEMORIES.forEach(function (m, i) {
+        sc().memories.forEach(function (m, i) {
           setTimeout(function () {
             addMemoryItem(m);
           }, i * 220);
@@ -1222,23 +1281,23 @@ const html = `<!doctype html>
         setTimeout(function () {
           setThreadState("active", "Active");
           phase = "session2";
-          document.getElementById("nextBtn").textContent =
-            "\u25B6 Next message";
+          document.getElementById("nextBtn").textContent = "\u25B6 Next message";
           document.getElementById("nextBtn").className = "play-btn btn-primary";
           enableNext();
         }, 500);
       }
 
       function playSession2() {
-        if (s2idx >= SESSION2.length) {
+        var data = sc().session2;
+        if (s2idx >= data.length) {
           phase = "done";
           var btn = document.getElementById("nextBtn");
           btn.textContent = "\u21BA Replay demo";
           btn.className = "play-btn btn-secondary";
-          btn.onclick = replayDemo;
+          btn.onclick = function () { replayDemo(); };
           return;
         }
-        var msg = SESSION2[s2idx];
+        var msg = data[s2idx];
         s2idx++;
 
         if (msg.role === "user") {
@@ -1247,8 +1306,8 @@ const html = `<!doctype html>
             bumpMsgCount();
             setTimeout(function () {
               showTyping(function () {
-                if (s2idx < SESSION2.length && SESSION2[s2idx].role === "ai") {
-                  var aiMsg = SESSION2[s2idx];
+                if (s2idx < data.length && data[s2idx].role === "ai") {
+                  var aiMsg = data[s2idx];
                   s2idx++;
                   appendMessage("ai", aiMsg.text, function () {
                     bumpMsgCount();
@@ -1279,7 +1338,7 @@ const html = `<!doctype html>
 
         var avatar = document.createElement("div");
         avatar.className = "msg-avatar";
-        avatar.textContent = role === "ai" ? "V" : "S";
+        avatar.textContent = role === "ai" ? "V" : sc().avatar;
 
         var bubble = document.createElement("div");
         bubble.className = "msg-bubble";
@@ -1397,6 +1456,7 @@ const html = `<!doctype html>
         msgCount = 0;
         memCount = 0;
 
+        document.getElementById("chatLabel").textContent = sc().name;
         document.getElementById("chatMessages").innerHTML = "";
         document.getElementById("memoriesBody").innerHTML =
           '<div class="memory-empty" id="memEmpty">' +
@@ -1408,6 +1468,7 @@ const html = `<!doctype html>
         document.getElementById("infoEmbedCalls").textContent = "0";
         document.getElementById("infoState").textContent = "active";
         document.getElementById("threadId").textContent = "thread_sess1_demo";
+        document.querySelector(".thread-info .thread-value").textContent = sc().user;
         setThreadState("active", "Active");
 
         document.getElementById("pipelineCard").classList.remove("show");

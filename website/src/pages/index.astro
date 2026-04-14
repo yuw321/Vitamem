@@ -5,18 +5,18 @@ const html = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vitamem — Memory for AI Health Companions</title>
+    <title>Vitamem — Lifecycle-Aware Memory for AI</title>
     <meta
       name="description"
-      content="Open-source TypeScript library for AI health companions. Lifecycle-aware memory that understands the rhythm of care relationships."
+      content="Open-source TypeScript library that gives AI long-term memory. Models conversations as sessions with a lifecycle — extracting what matters when sessions rest, recalling it when users return."
     />
     <meta
       property="og:title"
-      content="Vitamem — Memory for AI Health Companions"
+      content="Vitamem — Lifecycle-Aware Memory for AI"
     />
     <meta
       property="og:description"
-      content="Lifecycle-aware memory for AI health companions. Active → Cooling → Dormant → Closed."
+      content="Lifecycle-aware memory for AI. Extract once when sessions rest, recall always when users return — automatically."
     />
     <meta property="og:image" content="/brand/social-preview.png" />
     <meta property="og:type" content="website" />
@@ -860,14 +860,13 @@ const html = `<!doctype html>
           <img src="/brand/logo-concept-a.svg" alt="Vitamem" />
         </div>
         <h1>
-          Memory for AI health companions<br /><em>that actually listens.</em>
+          Lifecycle-aware memory for AI.<br /><em>Extract once, recall always.</em>
         </h1>
         <p class="hero-sub">
-          Most memory libraries treat every message the same. Vitamem
-          understands that care relationships have a rhythm — and models it.
+          Vitamem models conversations as sessions with a lifecycle. When a session rests, it extracts the facts that matter, deduplicates them, and makes them available for every future conversation — automatically.
         </p>
         <p class="hero-clarifier">
-          Your AI remembers what matters — across every conversation, automatically. Five lines of code. Zero memory infrastructure to build.
+          Five lines of code. Zero memory infrastructure to build. Works with any AI that talks to users across sessions.
         </p>
         <div class="hero-actions">
           <a href="/demo" class="btn btn-primary">
@@ -943,8 +942,8 @@ const html = `<!doctype html>
             Conversations have a lifecycle. Vitamem tracks it.
           </h2>
           <p class="section-desc">
-            Every thread moves through four states — mirroring how care
-            relationships actually work. Click a state to learn what happens.
+            Every thread moves through four states — mirroring how real
+            conversations actually work. Click a state to learn what happens.
           </p>
         </div>
 
@@ -997,7 +996,7 @@ const html = `<!doctype html>
       <div class="container reveal">
         <div class="section-header">
           <div class="section-label">Why Vitamem</div>
-          <h2 class="section-title">Verified properties of the library</h2>
+          <h2 class="section-title">Why Vitamem</h2>
           <p class="section-desc">
             These are facts about the code, not marketing claims.
           </p>
@@ -1005,7 +1004,7 @@ const html = `<!doctype html>
 
         <div class="claims-grid">
           <div class="claim-card">
-            <div class="claim-num teal">111</div>
+            <div class="claim-num teal">236</div>
             <div class="claim-title">Passing tests</div>
             <div class="claim-desc">
               96.6% statement coverage across all modules. Run
@@ -1055,50 +1054,76 @@ const html = `<!doctype html>
           </div>
         </div>
 
-        <!-- Embedding math -->
+        <!-- Cost insight -->
         <div class="section-header" style="margin-top: 52px; margin-bottom: 0">
-          <div class="section-label">Embedding Cost</div>
+          <div class="section-label">Core Insight</div>
           <h2 class="section-title">
-            Embed extracted facts, not every message
+            The real cost of AI memory is context window waste, not embeddings
           </h2>
-          <p class="section-desc" style="max-width: 600px">
-            Vitamem embeds only the facts extracted at dormant transition — not
-            each raw message as it arrives. Here's what that means in practice
-            for a typical health check-in session.
+          <p class="section-desc" style="max-width: 640px">
+            The real cost of memory isn't embedding — it's the tokens you send
+            to the LLM on every chat turn. LLM input tokens cost
+            <strong>$2.50–15 / 1M</strong> — that's
+            <strong>125–750×</strong> more expensive than embedding
+            (<strong>$0.02 / 1M</strong>).
           </p>
         </div>
 
         <div class="math-callout">
+          <!-- Primary: LLM token comparison -->
           <div class="math-col naive">
-            <div class="math-label">Naive per-message approach</div>
-            <div class="math-value">50</div>
+            <div class="math-label">Naive: stuff all memories</div>
+            <div class="math-value">2,000+</div>
             <div class="math-desc">
-              Embedding API calls for a 50-message session — one per message, at
-              send time.
+              tokens injected into every LLM call — the entire memory store,
+              growing with each session.
             </div>
           </div>
           <div class="math-col vita">
-            <div class="math-label">Vitamem approach</div>
-            <div class="math-value">5–8</div>
+            <div class="math-label">Vitamem: retrieve relevant</div>
+            <div class="math-value">~300</div>
             <div class="math-desc">
-              Embedding API calls — one per extracted fact, once per thread
-              lifetime, at dormant transition.
+              tokens per turn — only the memories that matter, stays flat as
+              the store grows.
             </div>
           </div>
           <div class="cost-comparison">
             <div class="cost-row">
-              <span class="cost-label">Without Vitamem:</span>
-              <span class="cost-value rose">50 embedding calls, noisy search results</span>
+              <span class="cost-label">Stuffing over 50 chats:</span>
+              <span class="cost-value rose">~100K tokens → $0.25–1.50</span>
             </div>
             <div class="cost-row">
-              <span class="cost-label">With Vitamem:</span>
-              <span class="cost-value teal">6 embedding calls, clean fact-based search</span>
+              <span class="cost-label">Retrieval over 50 chats:</span>
+              <span class="cost-value teal">~15K tokens → $0.04–0.23</span>
             </div>
           </div>
+
+          <!-- Secondary: embedding call reduction -->
+          <div style="border-top: 1px solid var(--mid); margin-top: 20px; padding-top: 18px; display: flex; gap: 28px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <div class="math-label" style="margin-bottom: 6px;">Plus, storage embeddings are batched</div>
+              <div style="display: flex; align-items: baseline; gap: 16px;">
+                <div>
+                  <span class="cost-value rose" style="font-size: 22px;">50</span>
+                  <span style="font-size: 12px; opacity: .6;"> calls (naive)</span>
+                </div>
+                <span style="font-size: 18px; opacity: .4;">→</span>
+                <div>
+                  <span class="cost-value teal" style="font-size: 22px;">6</span>
+                  <span style="font-size: 12px; opacity: .6;"> calls (Vitamem)</span>
+                </div>
+              </div>
+              <div class="math-desc" style="margin-top: 6px;">
+                ~8× fewer embedding calls — one per extracted fact at dormant
+                transition, not per message.
+              </div>
+            </div>
+          </div>
+
           <div class="math-footnote">
-            Savings ratio = messages ÷ extracted facts. A 50-message session
-            producing 6 facts = ~8× fewer embedding calls. Savings compound for
-            long-term users with repeat sessions.
+            As memory grows from 20 to 200 facts, stuffing cost grows 10×.
+            Retrieval stays constant — only the most relevant facts are
+            fetched, regardless of store size.
           </div>
         </div>
       </div>
@@ -1109,43 +1134,38 @@ const html = `<!doctype html>
       <div class="container reveal">
         <div class="section-header">
           <div class="section-label">Use Cases</div>
-          <h2 class="section-title">Built for health AI, broadly applicable</h2>
+          <h2 class="section-title">Any AI that needs to remember users</h2>
           <p class="section-desc">
-            Anywhere a care relationship needs memory that respects its natural
-            rhythm.
+            Health companions, coaching assistants, tutoring systems — anywhere your AI needs persistent, cross-session memory.
           </p>
         </div>
         <div class="use-grid">
           <div class="use-card">
             <div class="use-icon">🩺</div>
-            <div class="use-title">AI Health Companions</div>
+            <div class="use-title">Health Companions</div>
             <div class="use-desc">
-              Remembers symptoms, medications, conditions, and health goals
-              across many sessions over months.
+              Track symptoms, medications, and health goals across sessions. Built-in health profile rules and auto-pinning included.
             </div>
           </div>
           <div class="use-card">
-            <div class="use-icon">🧠</div>
-            <div class="use-title">Counseling Assistants</div>
+            <div class="use-icon">🎯</div>
+            <div class="use-title">Coaching Assistants</div>
             <div class="use-desc">
-              Maintains emotional context and recalls what matters — supporting
-              therapeutic progress naturally.
+              Remember goals, progress, and setbacks over time. Deduplication keeps the coaching record clean as context evolves.
             </div>
           </div>
           <div class="use-card">
-            <div class="use-icon">📋</div>
-            <div class="use-title">Chronic Condition Tracking</div>
+            <div class="use-icon">📚</div>
+            <div class="use-title">Tutoring Systems</div>
             <div class="use-desc">
-              Persists health history across long gaps between check-ins.
-              Deduplication keeps records clean over time.
+              Know what students understand, where they struggle, and what they've mastered — without per-message processing costs.
             </div>
           </div>
           <div class="use-card">
-            <div class="use-icon">🌿</div>
-            <div class="use-title">Wellness Apps</div>
+            <div class="use-icon">🎧</div>
+            <div class="use-title">Support Agents</div>
             <div class="use-desc">
-              Builds a richer picture of the user across habits, goals, and
-              lifestyle — without expensive per-message processing.
+              Recall customer context, issue history, and preferences. Every support session starts with full context, not a blank slate.
             </div>
           </div>
         </div>
@@ -1173,27 +1193,33 @@ const html = `<!doctype html>
               <div class="code-dot" style="background: #28c840"></div>
             </div>
           </div>
-          <pre><span class="kw">import</span> { <span class="fn">createVitamem</span>, <span class="cn">InMemoryAdapter</span> } <span class="kw">from</span> <span class="str">'vitamem'</span><span class="op">;</span>
+          <pre><span class="kw">import</span> { <span class="fn">createVitamem</span> } <span class="kw">from</span> <span class="str">'vitamem'</span><span class="op">;</span>
 
-<span class="cm">// 1. Wire up your LLM (OpenAI, Anthropic, or any provider)</span>
-<span class="kw">const</span> <span class="cn">llm</span> <span class="op">=</span> { <span class="fn">chat</span>, <span class="fn">extractMemories</span>, <span class="fn">embed</span> }<span class="op">;</span>  <span class="cm">// your adapter</span>
+<span class="cm">// 1. Initialize with a provider shortcut</span>
+<span class="kw">const</span> <span class="cn">mem</span> <span class="op">=</span> <span class="kw">await</span> <span class="fn">createVitamem</span>({
+  provider: <span class="str">'openai'</span>,
+  apiKey: process.env.<span class="cn">OPENAI_API_KEY</span>,
+  storage: <span class="str">'ephemeral'</span>,
+  autoRetrieve: <span class="kw">true</span>,
+})<span class="op">;</span>
 
-<span class="cm">// 2. Initialize</span>
-<span class="kw">const</span> <span class="cn">mem</span> <span class="op">=</span> <span class="kw">await</span> <span class="fn">createVitamem</span>(
-  { llm: { provider: <span class="str">'openai'</span>, model: <span class="str">'gpt-4o-mini'</span> }, storage: { adapter: <span class="str">'in-memory'</span> } },
-  { llm: <span class="cn">llm</span>, storage: <span class="kw">new</span> <span class="cn">InMemoryAdapter</span>() },
-)<span class="op">;</span>
+<span class="cm">// 2. Start a conversation session</span>
+<span class="kw">const</span> <span class="cn">thread</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">createThread</span>({ userId: <span class="str">'user-123'</span> })<span class="op">;</span>
+<span class="kw">const</span> { reply } <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">chat</span>({
+  threadId: <span class="cn">thread</span>.id,
+  message: <span class="str">"I prefer dark mode, use TypeScript, and deploy on Vercel."</span>,
+})<span class="op">;</span>
 
-<span class="cm">// 3. Start a health companion session</span>
-<span class="kw">const</span> <span class="cn">thread</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">createThread</span>({ userId: <span class="str">'patient-123'</span> })<span class="op">;</span>
-<span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">chat</span>({ threadId: <span class="cn">thread</span>.id, message: <span class="str">"I've had Type 2 diabetes for 3 years. I take metformin daily."</span> })<span class="op">;</span>
+<span class="cm">// 3. Session rests → extract facts, embed once, deduplicate, save</span>
+<span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">triggerDormantTransition</span>(<span class="cn">thread</span>.id)<span class="op">;</span>
 
-<span class="cm">// 4. End session — extract facts, embed once, deduplicate, save</span>
-<span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">triggerDormantTransition</span>(<span class="cn">thread</span>.id)<span class="op">;</span>  <span class="cm">// thread.state → 'dormant'</span>
-
-<span class="cm">// 5. Next session — retrieve memories by semantic query</span>
-<span class="kw">const</span> <span class="cn">memories</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">retrieve</span>({ userId: <span class="str">'patient-123'</span>, query: <span class="str">'medications and conditions'</span> })<span class="op">;</span>
-<span class="cm">// [{ content: 'Has Type 2 diabetes', source: 'confirmed', score: 0.96 }, ...]</span></pre>
+<span class="cm">// 4. Next session — relevant memories appear automatically</span>
+<span class="kw">const</span> <span class="cn">newThread</span> <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">createThread</span>({ userId: <span class="str">'user-123'</span> })<span class="op">;</span>
+<span class="kw">const</span> { reply: reply2 } <span class="op">=</span> <span class="kw">await</span> <span class="cn">mem</span>.<span class="fn">chat</span>({
+  threadId: <span class="cn">newThread</span>.id,
+  message: <span class="str">"What tools do I use?"</span>,
+})<span class="op">;</span>
+<span class="cm">// Vitamem auto-retrieves: "Prefers TypeScript", "Deploys on Vercel", ...</span></pre>
         </div>
 
         <div
@@ -1224,11 +1250,7 @@ const html = `<!doctype html>
         </div>
 
         <div class="disclaimer">
-          <strong>Disclaimer:</strong> Vitamem is a developer library for memory
-          management. It is not a medical device and is not intended to
-          diagnose, treat, cure, or prevent any medical condition. Applications
-          using Vitamem are responsible for their own privacy policies,
-          compliance requirements (HIPAA, GDPR, etc.), and safety disclosures.
+          <strong>Note:</strong> Vitamem is a developer library for AI memory management, not a medical device. If you build health-related applications, you are responsible for compliance (HIPAA, GDPR, etc.) and safety disclosures.
           <a href="/legal/disclaimer/" style="color: var(--teal-lt)"
             >Full disclaimer →</a
           >
@@ -1393,7 +1415,7 @@ const html = `<!doctype html>
         },
         cooling: {
           title: "Cooling — between sessions",
-          body: "The conversation has gone quiet. A configurable timer starts (default: 6 hours). If the user sends a new message, the thread <strong>automatically reactivates to Active</strong> — no manual intervention needed. This models the natural gap between health check-ins without losing the relationship.",
+          body: "The conversation has gone quiet. A configurable timer starts (default: 6 hours). If the user sends a new message, the thread <strong>automatically reactivates to Active</strong> — no manual intervention needed. This models the natural gap between sessions without losing context.",
         },
         dormant: {
           title: "Dormant — memories extracted and saved",
@@ -1401,7 +1423,7 @@ const html = `<!doctype html>
         },
         closed: {
           title: "Closed — archived permanently",
-          body: 'The thread is done — either the user has discharged or the care relationship has ended. The extracted memories remain in the store and are searchable indefinitely. No further processing happens on this thread. Invalid transitions from closed throw <code style="font-size:12px;background:#334155;padding:1px 4px;border-radius:3px;">InvalidTransitionError</code>.',
+          body: 'The thread is done — either the user is done or the engagement has ended. The extracted memories remain in the store and are searchable indefinitely. No further processing happens on this thread. Invalid transitions from closed throw <code style="font-size:12px;background:#334155;padding:1px 4px;border-radius:3px;">InvalidTransitionError</code>.',
         },
       };
 

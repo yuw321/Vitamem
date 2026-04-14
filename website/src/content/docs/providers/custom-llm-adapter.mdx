@@ -15,7 +15,7 @@ Before building a custom adapter, check if the built-in [OpenAI adapter](/provid
 
 ## The LLMAdapter Interface
 
-The interface has three methods:
+The interface has three required methods and one optional method:
 
 ```typescript
 import type { LLMAdapter, Message, MemorySource } from "vitamem";
@@ -24,10 +24,24 @@ interface LLMAdapter {
   /** Send a chat completion request and return the response text. */
   chat(messages: Array<{ role: string; content: string }>): Promise<string>;
 
+  /** Stream a chat completion, yielding response tokens as they arrive. Optional. */
+  chatStream?(
+    messages: Array<{ role: string; content: string }>,
+  ): AsyncGenerator<string, void, unknown>;
+
   /** Extract memorable facts from a conversation as structured data. */
   extractMemories(
     messages: Message[],
-  ): Promise<Array<{ content: string; source: MemorySource }>>;
+    sessionDate?: string,
+  ): Promise<Array<{
+    content: string;
+    source: MemorySource;
+    tags?: string[];
+    profileField?: 'conditions' | 'medications' | 'allergies' | 'vitals' | 'goals' | 'none';
+    profileKey?: string;
+    profileValue?: string | number | { name: string; dosage?: string; frequency?: string };
+    profileUnit?: string;
+  }>>;
 
   /** Return a vector embedding for the given text. */
   embed(text: string): Promise<number[]>;
@@ -36,22 +50,31 @@ interface LLMAdapter {
 
 ### Method Details
 
-**`chat(messages)`**
+**`chat(messages)`** *(required)*
 
 Receives an array of messages with `role` (`"user"`, `"assistant"`, or `"system"`) and `content` fields. Returns the model's response as a plain string.
 
 Vitamem calls this method during `mem.chat()` to generate replies. The messages array includes conversation history and, when `autoRetrieve` is enabled, a system message with relevant memories from previous sessions.
 
-**`extractMemories(messages)`**
+**`chatStream(messages)`** *(optional)*
 
-Receives the full `Message[]` array from a thread (with `id`, `threadId`, `role`, `content`, and `createdAt` fields). Returns an array of extracted facts, each with:
+Streaming variant of `chat()`. Returns an `AsyncGenerator` that yields response tokens as they are produced. If not implemented, Vitamem's `chatStream()` and `chatWithUserStream()` fall back to non-streaming `chat()` and yield the full reply as a single chunk.
+
+**`extractMemories(messages, sessionDate?)`** *(required)*
+
+Receives the full `Message[]` array from a thread (with `id`, `threadId`, `role`, `content`, and `createdAt` fields) and an optional `sessionDate` string (`YYYY-MM-DD`). Returns an array of extracted facts, each with:
 
 - `content` -- a brief factual statement
 - `source` -- either `"confirmed"` (user stated it directly) or `"inferred"` (derived from context)
+- `tags` -- *(optional)* category tags for filtering (e.g., `"preference"`, `"goal"`)
+- `profileField` -- *(optional)* structured profile field mapping for health/domain apps
+- `profileKey`, `profileValue`, `profileUnit` -- *(optional)* structured value details for profile fields
 
-Vitamem calls this during the dormant transition pipeline to identify facts worth remembering. The implementation typically formats the messages into a prompt and parses the LLM's JSON response.
+Vitamem calls this during the dormant transition pipeline to identify facts worth remembering. The implementation typically formats the messages into a prompt and parses the LLM's JSON response. The `sessionDate` is appended to facts for temporal encoding.
 
-**`embed(text)`**
+At minimum, returning `{ content, source }` per fact is sufficient. The profile fields are only needed if you use `structuredExtractionRules` with LLM-first classification.
+
+**`embed(text)`** *(required)*
 
 Receives a text string and returns its vector embedding as a `number[]` array. The dimensionality depends on your embedding model (e.g., 1536 for OpenAI's `text-embedding-3-small`, 768 for `nomic-embed-text`).
 

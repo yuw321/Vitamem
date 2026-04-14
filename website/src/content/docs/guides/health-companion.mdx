@@ -7,7 +7,7 @@ sidebar:
 
 # Building a Health Companion
 
-This guide walks through building an AI health companion that remembers users across sessions -- tracking health conditions, medications, goals, and preferences -- and responds as a caring friend who genuinely knows them.
+Vitamem's lifecycle model is especially powerful for health applications, where sessions map naturally to check-ins, appointments, and follow-ups. This guide shows how to configure Vitamem with health-specific rules for an AI health companion that remembers conditions, medications, goals, and preferences across sessions.
 
 ## The Pattern
 
@@ -39,7 +39,7 @@ const mem = await createVitamem({
 
 // --- Starting a new session ---
 
-const thread = await mem.createThread({ userId: "patient-456" });
+const thread = await mem.createThread({ userId: "user-456" });
 
 // Memories from past sessions are injected automatically
 const { reply, memories } = await mem.chat({
@@ -124,7 +124,7 @@ async function endSession(threadId: string) {
 
 // --- Usage ---
 
-const userId = "patient-456";
+const userId = "user-456";
 
 // First session
 const { thread: session1, systemPrompt } = await startSession(userId);
@@ -170,6 +170,12 @@ const mem = await createVitamem({
   closedTimeoutMs: 90 * 24 * 60 * 60 * 1000, // 90 days
   embeddingConcurrency: 3,
   autoRetrieve: true,
+  enableReflection: true,  // Validate extractions for medical accuracy
+  forgetting: {
+    forgettingHalfLifeMs: 180 * 86400000,  // 180 days
+    minRetrievalScore: 0.1,
+  },
+  prioritySignaling: true,  // Mark allergies and medications as CRITICAL
 });
 
 // Sweep on a schedule to handle abandoned sessions
@@ -177,6 +183,10 @@ cron.schedule("*/15 * * * *", async () => {
   await mem.sweepThreads();
 });
 ```
+
+:::tip[Why enable reflection for health data?]
+Health companions deal with medications, dosages, and conditions where accuracy is critical. The [reflection pass](/concepts/reflection/) catches contradictions (e.g., conflicting medication dosages) and enriches vague facts (e.g., "takes pills" becomes "takes metformin 500mg twice daily") before they enter the memory store. The extra LLM call per session is a small cost for significantly higher data quality.
+:::
 
 ## Handling Long-term Users
 

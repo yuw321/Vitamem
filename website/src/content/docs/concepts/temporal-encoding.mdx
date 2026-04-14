@@ -1,0 +1,141 @@
+---
+title: "Temporal Encoding"
+description: "How Vitamem automatically embeds date information into extracted facts for temporal reasoning."
+sidebar:
+  order: 7
+---
+
+# Temporal Encoding
+
+When was a fact mentioned? Was it last week or six months ago? Temporal context transforms flat memories into a timeline. Vitamem automatically encodes **date information** into extracted facts, enabling the LLM to reason about when things happened, track changes over time, and prioritize recent information.
+
+## How It Works
+
+During the embedding pipeline, Vitamem derives a **session date** from the thread and passes it to the extraction LLM. The LLM then includes a date suffix on each extracted fact:
+
+```
+Takes metformin 500mg twice daily (mentioned 2025-03-15)
+```
+
+This date suffix becomes part of the memory's stored content and its embedding vector, meaning temporal information is baked into both the text and the semantic representation.
+
+### Where the Date Comes From
+
+The session date is derived automatically from the thread's metadata:
+
+```typescript
+const sessionDateSource = thread.lastMessageAt ?? thread.createdAt;
+const sessionDate = sessionDateSource.toISOString().slice(0, 10); // "YYYY-MM-DD"
+```
+
+The pipeline uses `lastMessageAt` as the primary source — this represents when the user last spoke in the thread, which is the most accurate proxy for "when this information was mentioned." If `lastMessageAt` is not available (e.g., a thread with no messages yet), it falls back to `createdAt`.
+
+### The Extraction Flow
+
+1. Thread transitions to dormant state
+2. Pipeline reads `thread.lastMessageAt` (or `thread.createdAt`)
+3. Converts to `YYYY-MM-DD` format
+4. Passes `sessionDate` to `llm.extractMemories(messages, sessionDate)`
+5. The LLM adapter includes the date in its extraction prompt
+6. Extracted facts include `(mentioned YYYY-MM-DD)` suffix
+
+## Benefits
+
+### Temporal Reasoning
+
+With dates embedded in memories, the LLM can answer time-aware questions:
+
+- _"What medications was I on last year?"_ — the LLM can filter by date
+- _"How has my A1C changed over time?"_ — multiple dated A1C readings create a timeline
+- _"When did I start exercising?"_ — the date suffix provides the answer
+
+### Chronological Retrieval
+
+The [memory formatting](/concepts/memory-formatting/) system groups retrieved memories by month and year. Temporal encoding makes these groupings meaningful — each memory carries the date it was mentioned, not just when it was stored internally.
+
+### Deduplication Precision
+
+Date suffixes help the deduplication system distinguish between genuinely different facts that might otherwise look like duplicates:
+
+- "A1C was 7.2 (mentioned 2025-01-10)" and "A1C was 6.8 (mentioned 2025-06-15)" are clearly different readings at different times
+- Without dates, these might fall in the supersede band and one would overwrite the other
+
+The date suffix shifts the embedding vector enough that time-separated measurements of the same metric are recognized as distinct facts worth keeping.
+
+## Zero Configuration Required
+
+Temporal encoding works **automatically** with the built-in embedding pipeline. There is no configuration flag to enable or disable it — it is always active when using `createVitamem()` and the standard pipeline.
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+});
+
+// Temporal encoding is already active — no extra config needed
+```
+
+## Adapter Support
+
+If you are building a custom LLM adapter, the `extractMemories` method receives the session date as an optional second parameter:
+
+```typescript
+interface LLMAdapter {
+  extractMemories(
+    messages: Message[],
+    sessionDate?: string, // "YYYY-MM-DD"
+  ): Promise<ExtractedFact[]>;
+}
+```
+
+Your adapter's extraction prompt should instruct the LLM to include the date suffix on extracted facts. The built-in OpenAI, Anthropic, and Ollama adapters handle this automatically.
+
+### Custom Adapter Example
+
+```typescript
+const customAdapter: LLMAdapter = {
+  async extractMemories(messages, sessionDate) {
+    const dateInstruction = sessionDate
+      ? `Append "(mentioned ${sessionDate})" to each extracted fact.`
+      : "";
+
+    const prompt = `Extract facts from this conversation. ${dateInstruction}
+Return JSON array of { content, source } objects.`;
+
+    // ... call your LLM with the prompt
+  },
+  // ... other methods
+};
+```
+
+## How It Interacts with Other Features
+
+### Active Forgetting
+
+Temporal encoding and [active forgetting](/concepts/active-forgetting/) are complementary but independent. The date suffix in the content is for LLM reasoning; active forgetting uses `lastRetrievedAt` and `createdAt` timestamps on the memory object for score decay. They operate on different data and serve different purposes.
+
+### Memory Formatting
+
+The [memory formatting](/concepts/memory-formatting/) system reads the `createdAt` timestamp on memory objects (not the date suffix in content) to build chronological groupings. However, the date suffix in the content provides additional context within each group — the LLM can see both the structural grouping ("--- March 2025 ---") and the inline date ("mentioned 2025-03-15").
+
+### Deduplication
+
+The date suffix slightly changes the embedding vector of a fact, which affects cosine similarity calculations. Two identical facts with different dates will have a lower similarity score than two identical facts with the same date. This is by design — it prevents temporal updates from being incorrectly deduplicated.
+
+## Example Timeline
+
+A user with diabetes checks in over several months. Their memory store might look like:
+
+```
+A1C was 7.4% (mentioned 2025-01-10) (confirmed)
+Started walking 30 minutes daily (mentioned 2025-02-05) (confirmed)
+Reduced carb intake (mentioned 2025-02-05) (inferred)
+A1C improved to 7.0% (mentioned 2025-04-12) (confirmed)
+Doctor reduced metformin dosage (mentioned 2025-04-12) (confirmed)
+A1C now at 6.8% (mentioned 2025-07-20) (confirmed)
+```
+
+With this timeline, the LLM can see the progression: A1C went from 7.4% to 7.0% to 6.8% over six months, correlating with lifestyle changes and medication adjustments. Without temporal encoding, these would be flat facts with no temporal relationship.

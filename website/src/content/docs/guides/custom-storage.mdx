@@ -120,6 +120,24 @@ Delete a single memory by ID. Required for the facade's `deleteMemory()` method 
 
 Delete all memories for a user. Required for the facade's `deleteUserData()` method (GDPR full erasure).
 
+#### `getProfile?(userId: string): Promise<UserProfile | null>`
+
+Return the user's structured profile, or `null` if no profile exists. Required to enable the hybrid memory architecture. When implemented, the retrieval pipeline will automatically inject profile data into conversation context and suppress stale memories that contradict profile values.
+
+#### `updateProfile?(userId: string, updates: Partial<Omit<UserProfile, "userId">>): Promise<void>`
+
+Update the user's profile with merge semantics. Creates the profile if it doesn't exist. Array fields (`conditions`, `allergies`, `medications`, `goals`, `emergencyContacts`) should be replaced when present in `updates`. Object fields (`vitals`, `customFields`) should be shallow-merged.
+
+#### `updateProfileField?(userId: string, field: string, value: unknown, action: "set" | "add" | "remove"): Promise<void>`
+
+Update a single profile field with set/add/remove semantics. This is used by the structured extraction pipeline to apply classified facts to the profile:
+
+- **`set`**: Replace the field value entirely
+- **`add`**: Append to an array field (deduplicating strings and medications by name)
+- **`remove`**: Remove a value from an array field
+
+Special handling required for `vitals` (add action receives `{ key, record }`) and `medications` (add action receives a `Medication` object, deduplicate by `name`).
+
 ## Complete SQLite Example
 
 Here is a skeleton implementation using `better-sqlite3`. Adapt it to your preferred SQLite library or any SQL database.

@@ -127,7 +127,7 @@ console.log(dormant.coolingStartedAt); // null (cleared)
 try {
   transition(activeThread, "dormant"); // active -> dormant not allowed
 } catch (e) {
-  console.log(e.message); // "Invalid transition: active -> dormant"
+  console.log(e.message); // "Invalid transition: active → dormant"
 }
 ```
 
@@ -191,7 +191,7 @@ function shouldGoDormant(thread: Thread, dormantTimeoutMs: number): boolean;
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `thread` | `Thread` | The thread to check |
-| `dormantTimeoutMs` | `number` | Milliseconds in cooling before going dormant (default in facade: 6 hours) |
+| `dormantTimeoutMs` | `number` | Milliseconds in cooling before going dormant (default in facade: same as `coolingTimeoutMs`) |
 
 ### Returns
 
@@ -267,7 +267,7 @@ Error class thrown when an invalid state transition is attempted.
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `string` | Always `"InvalidTransitionError"` |
-| `message` | `string` | `"Invalid transition: {from} -> {to}"` |
+| `message` | `string` | `"Invalid transition: {from} → {to}"` |
 
 ### Example
 
@@ -278,7 +278,7 @@ try {
   transition(dormantThread, "active");
 } catch (e) {
   if (e instanceof InvalidTransitionError) {
-    console.log(e.message); // "Invalid transition: dormant -> active"
+    console.log(e.message); // "Invalid transition: dormant → active"
   }
 }
 ```

@@ -11,13 +11,12 @@ sidebar:
 
 | | Vitamem | Mem0 | Zep | Letta |
 |--|---------|------|-----|-------|
-| **Health-specific design** | ✅ Yes | ❌ General purpose | ❌ General purpose | ❌ General purpose |
-| **Thread lifecycle states** | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| **Thread lifecycle states** | ✅ Active → Cooling → Dormant → Closed | ❌ No | ❌ No | ❌ No |
 | **Embedding cost model** | Once at dormant | Per-message or periodic | Knowledge graph | Per-memory block |
+| **LLM token efficiency** | Selective retrieval = fewer input tokens per call | All memories in context | Graph traversal | Full memory blocks |
 | **Zero production deps** | ✅ Yes | ❌ Many | ❌ Many | ❌ Many |
 | **TypeScript-native** | ✅ Yes | Python-first | Python + TS | Python-first |
 | **Self-hosted** | ✅ Always | Optional | Optional | Yes |
-| **HIPAA-friendly architecture** | ✅ Lifecycle = less processing | ❌ No | Paid tier only | ❌ No |
 
 ---
 
@@ -26,16 +25,16 @@ sidebar:
 [Mem0](https://github.com/mem0ai/mem0) is the most popular open-source AI memory library (51k+ stars). It's excellent for general-purpose AI personalization.
 
 **Choose Vitamem if:**
-- You're building a health companion or counseling AI
-- You want the conversation lifecycle to match clinical patterns (sessions, breaks, discharge)
+- You want embeddings computed at natural session rest points, not per-message
+- You need the conversation lifecycle to match session-based workflows (check-ins, appointments, support tickets)
 - You need TypeScript-native with zero production dependencies
-- You want embeddings computed at natural rest points, not continuously
+- You want batch extraction + deduplication built in
 
 **Choose Mem0 if:**
 - You need Python support or a hosted API
-- You're building a general-purpose AI assistant (not health-specific)
 - You need multi-level memory (agent/session/user)
 - Community size and integrations are important (Mem0 has LangGraph, CrewAI, etc.)
+- Per-message extraction latency is acceptable for your use case
 
 ---
 
@@ -47,7 +46,7 @@ sidebar:
 - You want a simpler architecture without knowledge graph complexity
 - The thread lifecycle states match your workflow
 - You need TypeScript-native with no external service dependencies
-- You want health-specific documentation and patterns out of the box
+- You want a lightweight, self-hosted solution with zero production deps
 
 **Choose Zep if:**
 - You need relationship-aware context (entity graphs, temporal reasoning)
@@ -94,6 +93,8 @@ LangChain's memory modules (ConversationBufferMemory, ConversationSummaryMemory,
 
 ## The Core Difference
 
-Every alternative was built for general-purpose AI. Vitamem is the only open-source memory library designed around the specific patterns of health and care relationships:
+Vitamem is the only open-source memory library with a **conversation lifecycle model**. Other libraries treat every message equally — embedding continuously or on every add. Vitamem tracks when conversations are active, resting, and complete, extracting and deduplicating at natural rest points.
 
-> A therapy session has a beginning and end. There's a cooling-off period between appointments. Months might pass. Then the user returns. Vitamem's lifecycle states map directly to this pattern — and that makes it the natural choice for health AI.
+> A coaching session has a beginning and end. There's a gap between meetings. Weeks might pass. Then the user returns. A support ticket opens, gets worked on, and closes. A student checks in weekly. Vitamem's lifecycle states map directly to these patterns — active, cooling, dormant, closed.
+
+Because Vitamem retrieves only the most relevant memories per query, it sends fewer input tokens to the LLM compared to systems that inject all memories into context. This selective retrieval directly reduces per-call LLM costs.

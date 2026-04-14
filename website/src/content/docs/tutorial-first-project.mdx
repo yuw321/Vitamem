@@ -1,9 +1,9 @@
 ---
 title: "Tutorial: Build a Health Companion"
-description: "Build a health companion with persistent memory from scratch in about 10 minutes."
-sidebar:
-  order: 4
+description: Build a health companion with persistent memory from scratch in about 10 minutes.
 ---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 
 This tutorial walks through building a health companion that remembers user details across sessions. By the end you will have a working app that:
 
@@ -286,7 +286,13 @@ OPENAI_API_KEY=sk-... npx tsx src/index.ts
 
 You now have a working health companion with persistent memory. Here are some directions to explore:
 
-  - [**Thread Lifecycle**](/concepts/thread-lifecycle/) -- Understand active, cooling, dormant, and closed states
-  - [**Memory Extraction**](/concepts/memory-extraction/) -- How facts are extracted and classified as confirmed vs. inferred
-  - [**Sweep Threads**](/api-reference/create-vitamem/) -- Use `sweepThreads()` to automate lifecycle transitions on a cron schedule
-  - [**Production Storage**](/guides/custom-storage/) -- Switch from ephemeral to Supabase for persistent storage
+<CardGrid>
+  <LinkCard title="Thread Lifecycle" description="Understand active, cooling, dormant, and closed states" href="/concepts/thread-lifecycle/" />
+  <LinkCard title="Memory Extraction" description="How facts are extracted and classified as confirmed vs. inferred" href="/concepts/memory-extraction/" />
+  <LinkCard title="Sweep Threads" description="Use sweepThreads() to automate lifecycle transitions on a cron schedule" href="/api-reference/create-vitamem/" />
+  <LinkCard title="Production Storage" description="Switch from ephemeral to Supabase for persistent storage" href="/guides/custom-storage/" />
+</CardGrid>
+
+:::note[Want better memory quality?]
+Explore Phase 1 features to make your health companion smarter: [Reflection](/concepts/reflection/) validates extracted facts with a second LLM pass, and [Active Forgetting](/concepts/active-forgetting/) ensures stale memories naturally decay over time.
+:::

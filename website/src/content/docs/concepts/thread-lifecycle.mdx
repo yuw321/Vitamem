@@ -7,7 +7,7 @@ sidebar:
 
 # Thread Lifecycle
 
-Every conversation in Vitamem is a **thread** -- an object that moves through four lifecycle states. This lifecycle is the core innovation: it models the natural rhythm of care relationships rather than treating all interactions as a flat stream of messages.
+Every conversation in Vitamem is a **thread** -- an object that moves through four lifecycle states. This lifecycle is the core innovation: it models how real conversations work -- they start, pause, resume, and eventually end -- rather than treating all interactions as a flat stream of messages.
 
 ## The Four States
 
@@ -44,6 +44,10 @@ The key transition. The thread runs the **embedding pipeline**:
 
 After this, the raw messages no longer need to be processed again. The compressed, deduplicated facts represent everything worth remembering from the conversation.
 
+If [reflection](/concepts/reflection/) is enabled (`enableReflection: true`), Vitamem runs an additional validation pass during this transition to catch contradictions and enrich vague facts before they are saved.
+
+Memories stored during dormant transitions also participate in [active forgetting](/concepts/active-forgetting/) -- older, unretrieved memories naturally decay in relevance over time, keeping the memory store focused on what matters most. During sweep operations, `shouldArchive()` is available for cleanup of memories that have decayed below the configured threshold.
+
 **Entry conditions:** Cooling timer expires, or `triggerDormantTransition()` called explicitly.
 
 ### Closed
@@ -57,15 +61,15 @@ Terminal state. The thread is fully archived. The extracted memories remain in t
 ## State Transition Diagram
 
 ```
-                new message
-                    ↓
-  ┌────────┐   ┌─────────┐   ┌─────────┐   ┌────────┐
-  │ active │──▶│ cooling │──▶│ dormant │──▶│ closed │
-  └────────┘   └─────────┘   └─────────┘   └────────┘
-                    │              ▲
-                    │  reactivate  │
-                    └──────────────┘
-                  (new message)
+                 new message
+                     ↓
+  ┌────────┐    ┌─────────┐    ┌─────────┐    ┌────────┐
+  │ active │───▶│ cooling │───▶│ dormant │───▶│ closed │
+  └────────┘    └─────────┘    └─────────┘    └────────┘
+       ▲             │
+       │ reactivate  │
+       └─────────────┘
+         (new message)
 ```
 
 All invalid transitions throw an `InvalidTransitionError`.
@@ -91,7 +95,7 @@ On each invocation, it performs three passes:
 
 1. **Active -> Cooling**: Finds all `active` threads where `lastMessageAt` is older than `coolingTimeoutMs` and transitions them to `cooling`.
 
-2. **Cooling -> Dormant**: Finds all `cooling` threads where `coolingStartedAt` is older than `coolingTimeoutMs` and transitions them to `dormant`. The [embedding pipeline](/api-reference/embedding-pipeline/) runs for each, extracting and saving memories.
+2. **Cooling -> Dormant**: Finds all `cooling` threads where `coolingStartedAt` is older than `dormantTimeoutMs` and transitions them to `dormant`. The [embedding pipeline](/api-reference/embedding-pipeline/) runs for each, extracting and saving memories.
 
 3. **Dormant -> Closed**: Finds all `dormant` threads where `dormantAt` is older than `closedTimeoutMs` and transitions them to `closed`.
 
@@ -148,7 +152,7 @@ const { reply } = await mem.chat({
 // Thread is now back to 'active' — no manual reactivation needed
 ```
 
-This reactivation pattern is especially important for health companions, where users often return after gaps of days or weeks.
+This reactivation pattern is especially important for applications with session-based interaction patterns, where users often return after gaps of days or weeks.
 
 ## Configuring Timeouts
 
@@ -158,22 +162,24 @@ const mem = await createVitamem({
   apiKey: process.env.OPENAI_API_KEY,
   storage: "ephemeral",
   coolingTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours (default: 6 hours)
+  dormantTimeoutMs: 6 * 60 * 60 * 1000, // 6 hours (default: same as coolingTimeoutMs)
   closedTimeoutMs: 30 * 24 * 60 * 60 * 1000, // 30 days (default)
 });
 ```
 
 | Config | Default | Description |
 |--------|---------|-------------|
-| `coolingTimeoutMs` | `21600000` (6 hours) | Inactivity before `active -> cooling`, and time in `cooling` before `cooling -> dormant` |
+| `coolingTimeoutMs` | `21600000` (6 hours) | Inactivity before `active -> cooling` |
+| `dormantTimeoutMs` | Same as `coolingTimeoutMs` | Time in `cooling` before `cooling -> dormant` |
 | `closedTimeoutMs` | `2592000000` (30 days) | Time in `dormant` before `sweepThreads()` auto-closes |
 
 ## Why This Design?
 
-The lifecycle states map directly to how health relationships actually work:
+The lifecycle states map directly to how real conversations work:
 
-- A therapy session is **active** while the user is engaged
-- The period between appointments is **cooling** -- the relationship is still live
-- An extended break (vacation, life events) triggers **dormant** -- memories are compressed
-- Discharge from a care program is **closed** -- the record is preserved but no longer processed
+- A support session is **active** while the user is engaged
+- The gap after a coaching check-in or tutoring session is **cooling** -- the conversation may resume
+- An extended break (days, weeks, or longer) triggers **dormant** -- memories are compressed
+- When a conversation thread has run its course -- a project wraps up, a patient is discharged, a course ends -- it's **closed** and the record is preserved
 
-This means Vitamem's architecture aligns with clinical workflow patterns out of the box, without requiring custom logic.
+This means Vitamem's architecture aligns with natural conversation patterns out of the box, without requiring custom logic.

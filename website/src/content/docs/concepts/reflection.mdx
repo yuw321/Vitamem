@@ -1,0 +1,182 @@
+---
+title: "Reflection"
+description: "How Vitamem uses an optional second LLM call to validate and enrich extracted memories."
+sidebar:
+  order: 6
+---
+
+# Reflection
+
+Memory extraction from conversations is inherently imperfect. An LLM might misinterpret a hypothetical as a fact, miss an important detail buried in casual language, or produce a vague summary when specificity matters. Vitamem's **reflection** system addresses this with an optional second LLM call that reviews and validates extracted facts before they are stored.
+
+## What Reflection Does
+
+When enabled, reflection adds a validation pass between extraction and storage. The reflection LLM receives three inputs:
+
+1. **Extracted facts** — the facts produced by the initial extraction step
+2. **Existing memories** — the user's currently stored memories
+3. **Original conversation** — the raw messages from the thread
+
+With this full picture, the reflection pass can catch issues that the extraction pass alone cannot.
+
+### What It Catches
+
+**Contradictions with existing memories.** If a new fact conflicts with something already stored — for example, "Uses React 18" when an existing memory says "Uses React 19" — reflection flags the conflict and recommends a resolution: keep the new fact, keep the existing one, or merge them.
+
+**Missed facts.** The initial extraction might skip important information. Reflection can identify facts that were present in the conversation but not captured, and add them as `missedFacts`.
+
+**Vague or incomplete facts.** A fact like "Uses some framework" is less useful than "Uses Next.js 15 with App Router." Reflection can enrich vague facts with additional context from the conversation, marking them with an `enrich` action.
+
+**Inaccurate extractions.** If the extraction misinterpreted what the user said — perhaps extracting "Dislikes TypeScript" when the user actually said "I found TypeScript frustrating at first but now prefer it" — reflection can correct the fact or mark it for removal.
+
+## How It Works
+
+The reflection pipeline runs as Step 1a in the embedding pipeline, after initial extraction but before embedding and deduplication:
+
+1. **Extract** — LLM extracts facts from the conversation
+2. **Reflect** — (optional) second LLM call validates the extracted facts
+3. **Embed** — validated facts are embedded into vectors
+4. **Deduplicate** — facts are checked against existing memories
+5. **Store** — new unique facts are saved
+
+### The Reflection Result
+
+The reflection LLM returns a structured `ReflectionResult` with three arrays:
+
+```typescript
+interface ReflectionResult {
+  correctedFacts: Array<{
+    content: string;
+    source: "confirmed" | "inferred";
+    action: "keep" | "enrich" | "remove";
+    reason?: string;
+  }>;
+  missedFacts: Array<{
+    content: string;
+    source: "confirmed" | "inferred";
+  }>;
+  conflicts: Array<{
+    newFact: string;
+    existingMemory: string;
+    resolution: "keep_new" | "keep_existing" | "merge";
+  }>;
+}
+```
+
+- **`correctedFacts`** — each original fact is returned with an action:
+  - `keep` — the fact is accurate, store as-is
+  - `enrich` — the fact was improved with more context
+  - `remove` — the fact is wrong or useless, discard it
+- **`missedFacts`** — new facts discovered during reflection that the extraction missed
+- **`conflicts`** — contradictions between new facts and existing memories
+
+After reflection, facts marked `remove` are discarded, and `missedFacts` are merged into the pipeline alongside the kept/enriched facts.
+
+## Enabling Reflection
+
+Reflection is **disabled by default** because it adds latency and cost. Enable it with a single config flag:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  enableReflection: true,
+});
+```
+
+### Custom Reflection Prompt
+
+The default reflection prompt covers accuracy, contradictions, completeness, and specificity. You can override it with your own domain-specific prompt:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  enableReflection: true,
+  reflectionPrompt: `You are a clinical data reviewer. Focus on:
+- Medication dosages must be exact (reject vague amounts)
+- Flag any drug interactions between new and existing medications
+- Ensure vital signs include units
+- Verify patient-reported symptoms vs. diagnosed conditions
+
+Respond with JSON matching the ReflectionResult schema.`,
+});
+```
+
+## Graceful Fallback
+
+Reflection is designed to **never break the pipeline**. If the reflection LLM call fails for any reason — network error, invalid JSON response, timeout — the system falls back to the original extracted facts:
+
+```
+[vitamem:reflection] Reflection failed, returning original facts: Error: ...
+```
+
+The original facts are wrapped into a `ReflectionResult` where every fact has `action: "keep"`, `missedFacts` is empty, and `conflicts` is empty. This means the pipeline continues as if reflection was never enabled.
+
+This graceful degradation is critical for production reliability — you should never lose memories because a validation step failed.
+
+## Performance Tradeoff
+
+Reflection adds a second LLM call to the extraction pipeline. Consider the tradeoff:
+
+| Factor | Without Reflection | With Reflection |
+|--------|-------------------|-----------------|
+| LLM calls per extraction | 1 | 2 |
+| Latency | Lower | ~2x extraction time |
+| Cost | Lower | ~2x extraction cost |
+| Accuracy | Good | Better (catches errors) |
+| Completeness | May miss facts | Catches missed facts |
+| Conflict detection | None | Automatic |
+
+### When to Enable Reflection
+
+**Recommended for:**
+- Health and medical applications where fact accuracy is critical
+- Financial or legal domains where incorrect memories could cause harm
+- Any use case where memory quality is more important than extraction speed
+
+**May not be needed for:**
+- Casual conversation assistants where occasional inaccuracies are tolerable
+- High-throughput scenarios where latency is a primary concern
+- Development and prototyping (add it later when moving to production)
+
+:::tip
+Reflection runs during the dormant transition, not during live chat. This means the latency impact is felt during background processing, not in the user-facing response time. For most applications, this makes the performance tradeoff very acceptable.
+:::
+
+## Pipeline Statistics
+
+When reflection is enabled, the embedding pipeline result includes reflection-specific statistics:
+
+```typescript
+const result = await mem.triggerDormantTransition(threadId);
+
+console.log(result.reflection);
+// {
+//   factsModified: 2,   // facts that were enriched
+//   factsRemoved: 1,    // facts that were discarded
+//   missedFactsAdded: 1, // new facts discovered
+//   conflictsFound: 0,  // contradictions detected
+// }
+```
+
+These statistics help you understand the value reflection is providing. If `factsModified` and `missedFactsAdded` are consistently zero, reflection may not be adding much for your use case.
+
+## Example
+
+A user says: _"I started taking the new medication my doctor prescribed. It's 500mg twice a day. Oh, and I'm no longer on the old blood pressure pill."_
+
+**Without reflection**, extraction might produce:
+1. "Started new medication 500mg twice daily" (vague — which medication?)
+2. "No longer on blood pressure pill" (vague — which pill?)
+
+**With reflection**, the system reviews these against the conversation and existing memories:
+1. Enriches fact 1: "Doctor prescribed new medication at 500mg twice daily" (still doesn't know the name, but clarifies it's prescribed)
+2. Checks existing memories for a blood pressure medication and flags a conflict if one exists
+3. Might catch that the user implied stopping a medication, prompting a `keep_new` resolution
+
+The result is a cleaner, more accurate memory store that better represents what the user actually communicated.

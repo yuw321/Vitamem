@@ -1,0 +1,141 @@
+---
+title: "Active Forgetting"
+description: "How Vitamem uses time-based relevance decay to keep memory stores lean and contextually relevant."
+sidebar:
+  order: 5
+---
+
+# Active Forgetting
+
+Human memory naturally fades over time — rarely accessed information becomes harder to recall, while frequently revisited memories stay sharp. Vitamem's **active forgetting** system mirrors this behavior by applying time-based relevance decay to memory scores during retrieval.
+
+Without active forgetting, a user who interacts with your app over months or years accumulates an ever-growing memory store. Old, outdated facts compete with recent information for retrieval slots. Active forgetting ensures that stale memories gracefully lose prominence, keeping the context window focused on what matters now.
+
+## How It Works
+
+Active forgetting is applied during the retrieval pipeline, not at storage time. Memories are never deleted automatically — their **retrieval scores** are reduced based on how long it has been since they were last accessed.
+
+### The Decay Formula
+
+Each memory's score is multiplied by a **decay factor** computed from two inputs:
+
+1. **Time since last retrieval** — how long ago the memory was last accessed (or created, if never retrieved)
+2. **Retrieval count** — how many times the memory has been retrieved (frequently accessed memories resist decay)
+
+The decay factor is calculated as:
+
+```
+decayFactor = max(0.1, 1 - timeSinceLastRetrieval / (2 × halfLife))
+```
+
+The reference time is `lastRetrievedAt` if the memory has been retrieved before, otherwise `createdAt`. This means a memory that was stored 6 months ago but retrieved yesterday will have minimal decay, while one stored last week but never retrieved will decay faster.
+
+### Retrieval Count Bonus
+
+Frequently retrieved memories earn a **retrieval bonus** that slows their decay:
+
+```
+retrievalBoost = min(0.3, log1p(retrievalCount) × 0.1)
+decayFactor = min(1, decayFactor + retrievalBoost)
+```
+
+The `log1p` function provides diminishing returns — the first few retrievals have the most impact, preventing runaway scores from heavily accessed memories.
+
+### Score Floor
+
+The decay factor is clamped to a minimum of **0.1**, ensuring that even very old memories still have a small chance of appearing in results if they are highly relevant to the current query.
+
+## Pinned Memories Are Exempt
+
+**Pinned memories bypass decay entirely.** If a memory is pinned (manually or via auto-pin rules), its score is never reduced by the forgetting system. This ensures that critical safety information — allergies, medication interactions, emergency contacts — always surfaces at full strength regardless of age.
+
+## Configuration
+
+Active forgetting is **disabled by default**. Enable it by providing a `forgetting` configuration object:
+
+```typescript
+import { createVitamem } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  forgetting: {
+    forgettingHalfLifeMs: 180 * 24 * 60 * 60 * 1000, // 180 days (default)
+    minRetrievalScore: 0.1, // archive threshold (default)
+  },
+});
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `forgettingHalfLifeMs` | `number` | `15552000000` (180 days) | Half-life for memory decay in milliseconds. Shorter values cause faster forgetting. |
+| `minRetrievalScore` | `number` | `0.1` | Decay score threshold below which memories are marked for archival. |
+
+### Choosing a Half-Life
+
+The half-life controls how quickly memories fade:
+
+- **90 days** — aggressive forgetting, good for fast-moving contexts where information changes weekly
+- **180 days** (default) — balanced, suitable for regular check-in patterns (health, coaching, tutoring)
+- **365 days** — conservative, retains memories longer, good for infrequent interactions
+
+## Memory Archival
+
+The `shouldArchive()` function evaluates whether a memory's decay score has fallen below the `minRetrievalScore` threshold. This can be used to identify memories that are candidates for cleanup:
+
+- Memories with a decay factor below `minRetrievalScore` (default: 0.1) return `true`
+- Pinned memories always return `false` (never archived)
+- The same decay formula and retrieval count bonus are applied
+
+This function is useful for periodic maintenance — you could run it on all user memories during a background job to clean up memories that have become irrelevant over time.
+
+## Retrieval Metadata Tracking
+
+When active forgetting is enabled, Vitamem automatically tracks retrieval metadata on each memory:
+
+- **`lastRetrievedAt`** is updated to the current time whenever a memory appears in retrieval results
+- **`retrievalCount`** is incremented by 1 on each retrieval
+
+This tracking happens as a fire-and-forget operation — it does not block the retrieval response. The metadata feeds back into the decay formula, creating a natural reinforcement loop: memories that are useful get retrieved, which slows their decay, which keeps them retrievable.
+
+## Example
+
+Consider an app where a user checks in periodically:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "supabase",
+  supabaseUrl: process.env.SUPABASE_URL!,
+  supabaseKey: process.env.SUPABASE_KEY!,
+  forgetting: {
+    forgettingHalfLifeMs: 180 * 24 * 60 * 60 * 1000,
+    minRetrievalScore: 0.1,
+  },
+  autoPinRules: [
+    { pattern: /\ballerg(y|ic|ies)\b/i },
+    { pattern: /\bblood\s*type\b/i },
+  ],
+});
+```
+
+In this setup:
+
+- "Allergic to penicillin" is pinned and **never decays** — it always appears at full relevance
+- "Mentioned switching to a new framework in January" gradually fades unless referenced again
+- "Mentioned feeling stressed about a deadline" fades faster if it was only mentioned once and never retrieved
+- A memory retrieved 5 times has a retrieval boost of ~0.16, significantly slowing its decay
+
+## Why Not Just Delete Old Memories?
+
+Active forgetting is a **soft** mechanism — it reduces scores rather than removing memories. This is intentional:
+
+1. **Reversibility** — a decayed memory can still surface if it is the best match for a specific query
+2. **Context preservation** — old memories provide historical context even at low scores
+3. **Safety** — hard deletion risks losing information that turns out to be important later
+
+For hard cleanup, use the `shouldArchive()` function to identify candidates and delete them explicitly via `deleteMemory()`.

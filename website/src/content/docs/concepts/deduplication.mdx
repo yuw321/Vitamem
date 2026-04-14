@@ -24,8 +24,8 @@ Additionally, new facts within the same batch are deduplicated against each othe
 
 The default threshold of **0.92** is calibrated to:
 
-- Catch near-identical phrasings ("Takes metformin" vs "Is on metformin")
-- Allow genuinely distinct but related facts to coexist ("Takes metformin 500mg" vs "Takes metformin 1000mg")
+- Catch near-identical phrasings ("Prefers TypeScript" vs "Uses TypeScript")
+- Allow genuinely distinct but related facts to coexist ("Uses React for web apps" vs "Uses React Native for mobile")
 
 You can adjust this threshold when initializing:
 
@@ -42,17 +42,17 @@ const mem = await createVitamem({
 
 ## Example
 
-Suppose the user has an existing memory: **"Has Type 2 diabetes"**.
+Suppose the user has an existing memory: **"Prefers TypeScript over JavaScript"**.
 
-In a new conversation they say: _"As a diabetic, I need to watch my diet carefully."_
+In a new conversation they say: _"I always write my projects in TypeScript."_
 
-The extraction might produce: **"Is diabetic"**
+The extraction might produce: **"Uses TypeScript for projects"**
 
-Cosine similarity between "Has Type 2 diabetes" and "Is diabetic" vectors ≈ 0.95 → **duplicate, skipped**.
+Cosine similarity between "Prefers TypeScript over JavaScript" and "Uses TypeScript for projects" vectors ≈ 0.95 → **duplicate, skipped**.
 
-Later they say: _"My A1C was 7.2 at my last checkup."_
+Later they say: _"I just switched from AWS to Vercel for deployment."_
 
-Extraction produces: **"A1C was 7.2"**
+Extraction produces: **"Switched from AWS to Vercel"**
 
 Cosine similarity against all existing memories < 0.92 → **new fact, saved**.
 
@@ -72,7 +72,7 @@ Starting with Vitamem's two-tier threshold system, facts are not simply "duplica
 
 When a new fact falls in the supersede band (between `supersedeThreshold` and `deduplicationThreshold`), Vitamem recognizes it as the same topic with an updated value and replaces the existing memory content rather than creating a conflicting duplicate.
 
-**Example:** A user says _"My last A1C was 7.4%"_ and that fact is stored. Months later they say _"Current A1C is 6.8%"_. The cosine similarity between these two facts is ~0.88 — above the supersede threshold (0.75) but below the dedup threshold (0.92). Instead of storing both values (which would create conflicting memories), the old memory is updated to "Current A1C is 6.8%".
+**Example:** A user says _"I'm learning React"_ and that fact is stored. Months later they say _"I've become proficient in React"_. The cosine similarity between these two facts is ~0.88 — above the supersede threshold (0.75) but below the dedup threshold (0.92). Instead of storing both values (which would create conflicting memories), the old memory is updated to "Proficient in React".
 
 :::note[Source and Pinned Preservation]
 When a memory is superseded, Vitamem preserves the higher-confidence source classification. A "confirmed" memory will never be downgraded to "inferred" during supersede. Similarly, pinned status is preserved — a pinned memory stays pinned after supersede.
@@ -93,11 +93,38 @@ const mem = await createVitamem({
 ```
 
 :::tip
-The default thresholds (0.92 / 0.75) are calibrated for health companion use cases. Adjust them based on your domain — a narrower supersede band reduces false supersedes at the cost of more conflicting memories.
+The default thresholds (0.92 / 0.75) are well-calibrated for most use cases. Adjust them based on your domain — a narrower supersede band reduces false supersedes at the cost of more conflicting memories.
 :::
 
-## Why This Matters for Health Apps
+## Goal Deduplication
 
-Without deduplication, users who check in regularly would accumulate hundreds of redundant memories ("Has diabetes", "Is diabetic", "Manages diabetes", ...). This degrades retrieval quality because the vector store becomes diluted with near-duplicate entries.
+Goals referencing the same **health metric** are deduplicated semantically using a specialized strategy that differs from general memory deduplication.
 
-Vitamem's deduplication keeps the memory store lean and retrieval precise — which is especially important for health companions that may interact with a user daily over months or years.
+### How Goal Dedup Differs
+
+Unlike standard memory deduplication (which relies on cosine similarity between embeddings), goal deduplication uses **metric-keyword matching** and **word-overlap analysis**. This approach is more deterministic for structured health targets:
+
+| Strategy | Used for | Method |
+|----------|----------|--------|
+| Cosine similarity (≥ 0.92) | General memories | Embedding vector comparison |
+| Metric-keyword + word overlap | Health goals | Pattern matching on known metric terms |
+
+The system recognizes common health metric keywords: **A1C**, **blood pressure**, **weight**, **glucose**, **cholesterol**, and **BMI**.
+
+### Example
+
+A user sets a goal: _"Lower A1C below 7.0%"_. Later, they say: _"Maintain A1C below 7.0%"_.
+
+Both goals reference the **A1C** metric keyword and share significant word overlap. The result is a **single goal** — the newer wording ("Maintain A1C below 7.0%") replaces the older one, just like memory supersede but driven by keyword matching instead of vector similarity.
+
+### Fallback for Unrecognized Metrics
+
+Goals that do not contain a recognized metric keyword fall back to **exact-match deduplication**. This conservative approach avoids incorrectly merging unrelated goals (e.g., "Walk 10,000 steps daily" and "Drink 8 glasses of water daily" are both kept as distinct goals).
+
+## Why This Matters
+
+Without deduplication, users who interact regularly would accumulate hundreds of redundant memories ("Prefers TypeScript", "Uses TypeScript", "Writes in TypeScript", ...). This degrades retrieval quality because the vector store becomes diluted with near-duplicate entries.
+
+Vitamem's deduplication keeps the memory store lean and retrieval precise — which is especially important for applications where users interact over months or years, whether that's a health companion, coaching assistant, or support agent.
+
+Deduplication also has a direct cost benefit: by preventing memory bloat, it keeps both the embedding index and LLM context injection small. Without deduplication, a user mentioning the same fact across 10 sessions would create 10 near-identical memories, all competing for retrieval slots and inflating context tokens.

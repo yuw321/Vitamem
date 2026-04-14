@@ -17,11 +17,11 @@ The real power of extraction **compounds over time**. As sessions accumulate, [d
 
 | Session | Raw conversation | Memory store result |
 |---------|-----------------|--------------------|
-| **1** | "I was diagnosed with type 2 diabetes about 3 years ago" | New fact saved: `"Has Type 2 diabetes, diagnosed ~3 years ago"` |
-| **5** | User mentions diabetes again | Deduplicated — already stored, nothing added |
-| **12** | "My A1C went from 7.4 to 6.8" | Supersedes previous A1C value in-place |
+| **1** | "I'm learning Rust and want to ship my first CLI by March" | New facts saved: `"Learning Rust"`, `"Goal: ship CLI by March"` |
+| **5** | User mentions Rust again in passing | Deduplicated — already stored, nothing added |
+| **12** | "Finished the CLI, now building a web API in Rust" | Supersedes the old goal in-place |
 
-After 30 daily sessions, a user's memory store might contain ~20 refined facts rather than thousands of raw messages. Without extraction, memory grows with every conversation; with it, the store **converges on a concise, current knowledge base** that is fast to search and cheap to embed.
+After 30 daily sessions, a user's memory store might contain ~20 refined facts rather than thousands of raw messages. Without extraction, memory grows with every conversation; with it, the store **converges on a concise, current knowledge base** that is fast to search, cheap to embed, and keeps LLM context windows lean — only extracted facts are searched and retrieved, not raw conversation history.
 
 ## How Extraction Works
 
@@ -30,10 +30,10 @@ The extraction pipeline calls `llm.extractMemories(messages)` with the full conv
 ```typescript
 // What the LLM adapter returns
 [
-  { content: "Has Type 2 diabetes", source: "confirmed" },
-  { content: "Takes metformin 500mg twice daily", source: "confirmed" },
-  { content: "Exercises 3 times per week", source: "inferred" },
-  { content: "Prefers morning check-ins", source: "inferred" },
+  { content: "Prefers TypeScript over JavaScript", source: "confirmed" },
+  { content: "Deploys on Vercel", source: "confirmed" },
+  { content: "Working on a React Native mobile app", source: "confirmed" },
+  { content: "Prefers concise explanations", source: "inferred" },
 ]
 ```
 
@@ -43,36 +43,18 @@ Facts are classified by how confident we are they represent ground truth:
 
 | Source | Meaning | Example |
 |--------|---------|---------|
-| `confirmed` | User explicitly stated this | "I take metformin daily" |
-| `inferred` | Derived from context or assistant messages | Assistant noted the user seemed stressed |
+| `confirmed` | User explicitly stated this | "I prefer TypeScript" |
+| `inferred` | Derived from context or assistant messages | User seems to prefer concise explanations |
 
 This classification helps downstream systems apply appropriate confidence when using memories to personalize responses.
 
 ## The Built-in Extraction Prompt
 
-When using the built-in adapter factories (`createOpenAIAdapter`, `createAnthropicAdapter`, `createOllamaAdapter`), Vitamem includes a default extraction prompt optimized for health companion use cases.
+When using the built-in adapter factories (`createOpenAIAdapter`, `createAnthropicAdapter`, `createOllamaAdapter`), Vitamem includes a domain-agnostic default extraction prompt that works across all use cases.
 
-The OpenAI/Ollama default prompt:
+The default prompt extracts personal details, preferences, goals, habits, and important context — anything the user would expect to be remembered next time. Facts are tagged with categories like `"preference"`, `"goal"`, `"personal"`, `"professional"`, `"lifestyle"`, or `"general"`.
 
-```
-Extract key facts from this conversation that are worth remembering long-term.
-Focus on: health conditions, medications, lifestyle habits, goals, preferences,
-and personal context.
-
-Conversation:
-{conversation}
-
-Return a JSON array only (no markdown, no explanation):
-[{ "content": "brief factual statement", "source": "confirmed" | "inferred" }]
-
-Guidelines:
-- "confirmed" = user directly stated this fact
-- "inferred" = you derived this from context
-- Skip greetings, questions, and one-time events
-- Be specific (include numbers, dosages, dates when mentioned)
-```
-
-The Anthropic adapter uses a similar prompt with additional health-specific categories (vital signs, care team, family history).
+For health-specific use cases, Vitamem exports `HEALTH_EXTRACTION_PROMPT` and `HEALTH_EXTRACTION_PROMPT_ANTHROPIC` — these include structured profile field support for conditions, medications, allergies, vitals, and goals. See the [Health Companion Guide](/guides/health-companion/) for details.
 
 The `{conversation}` placeholder is replaced with the formatted conversation history at extraction time.
 
@@ -164,7 +146,7 @@ Your custom extraction prompt must:
 
 ### Tips for Effective Extraction Prompts
 
-- **Be domain-specific.** A fitness app should extract different facts than a therapy companion.
+- **Be domain-specific.** A fitness app should extract different facts than a tutoring assistant.
 - **List categories.** Explicitly tell the LLM what kinds of facts to look for.
 - **Include negative examples.** Tell the LLM what to skip (greetings, questions, opinions).
 - **Request specificity.** Ask for numbers, dates, and dosages instead of vague statements.
@@ -201,14 +183,79 @@ Vitamem also exports a simple rule-based extractor (`extractFactsSimple`) that d
 import { extractFactsSimple } from "vitamem";
 
 const facts = extractFactsSimple(messages);
-// [{ content: "I take metformin daily", source: "confirmed" }, ...]
+// [{ content: "I prefer TypeScript", source: "confirmed" }, ...]
 ```
 
 This is useful for testing but produces lower-quality memories than LLM extraction.
 
+## Structured Output
+
+Vitamem uses structured output when available to ensure reliable JSON parsing from LLM responses during memory extraction.
+
+### How It Works
+
+When extracting memories, Vitamem requests JSON-formatted responses from the LLM provider:
+
+- **OpenAI / DashScope / Ollama**: Uses `response_format: { type: "json_object" }` to guarantee valid JSON output
+- **Anthropic**: Uses prompt-based JSON guidance with post-validation
+
+All responses are parsed through a validation layer that:
+1. Accepts both wrapper objects (`{ "memories": [...] }`) and bare arrays for backward compatibility
+2. Validates each entry has a `content` string and a valid `source` ("confirmed" or "inferred")
+3. Strips invalid entries silently — partial extraction is better than total failure
+
+### Provider Support
+
+| Provider | JSON Mode | Schema Enforcement |
+|----------|-----------|-------------------|
+| OpenAI | `json_object` | `json_schema` available for gpt-4o+ |
+| DashScope | `json_object` | Not supported — prompt-based |
+| Anthropic | Prompt-based | `output_config.format` available (GA) |
+| Ollama | `json_object` | Native format supports schemas |
+
+## Hybrid Memory Architecture
+
+Vitamem uses a two-table architecture to handle different types of user data optimally:
+
+### Structured Data (User Profile)
+Critical structured data (like health metrics, medications, or allergies in a health app) can be extracted into a structured profile with direct field updates. This means:
+- **Value updates are immediate** — no embedding comparison needed
+- **Entries are deduplicated by field** — adding the same item twice results in one entry
+- **Profile data is always available** — injected into every conversation automatically
+
+### Semantic Data (Memory Store)
+Contextual information like lifestyle habits, preferences, and conversation insights continue through the embedding pipeline with vector-based deduplication and supersede.
+
+### How It Works
+During extraction, each fact is classified by pattern matching:
+1. Facts matching structured data patterns → **Profile update** (no embedding needed)
+2. All other facts → **Embedding pipeline** (existing dedup + supersede logic)
+
+Configure with `structuredExtractionRules` in your Vitamem config:
+
+```typescript
+import { createVitamem, HEALTH_STRUCTURED_RULES } from "vitamem";
+
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  structuredExtractionRules: HEALTH_STRUCTURED_RULES,
+});
+```
+
+The `HEALTH_STRUCTURED_RULES` preset includes patterns for:
+- **Vitals**: A1C, blood pressure, weight, blood glucose
+- **Allergies**: any allergy mention
+- **Medications**: medication with dosage
+- **Conditions**: diagnosed conditions
+- **Goals**: health and wellness goals
+
+You can also define custom rules using the `StructuredExtractionRule` interface.
+
 ## Auto-Pinning
 
-Critical health information can be **automatically pinned** during extraction so it always appears first in retrieval results. This ensures safety-critical facts (allergies, drug interactions, emergency contacts) are never buried by less important memories.
+Critical information can be **automatically pinned** during extraction so it always appears first in retrieval results. This ensures important facts (allergies, constraints, key preferences) are never buried by less important memories.
 
 ### Configuring Auto-Pin Rules
 
@@ -261,6 +308,93 @@ const customRules: AutoPinRule[] = [
 - Superseded memories can also be auto-pinned — pinning is **additive** and never removes existing pins
 - Pin status persists across memory updates
 
+## Role-Aware Extraction
+
+The extraction pipeline treats **user messages** and **AI/assistant messages** differently to avoid redundant writes:
+
+- **User messages**: All stated facts are extracted as new data. If the user says "I switched to Vercel for hosting", that is always extracted.
+- **AI/assistant messages**: Only genuinely new information is extracted — recommendations, advice, or new facts the assistant introduces.
+
+Critically, when the AI **echoes back known data** (e.g., repeating a user's A1C value from memory context), that echo is **not** re-extracted. This prevents redundant writes and preserves data history.
+
+### Example
+
+| Message | Role | Extracted? | Reason |
+|---------|------|------------|--------|
+| "I switched to Vercel for hosting" | User | Yes | New fact stated by user |
+| "Since you're on Vercel, here are some deployment tips..." | Assistant | **No** (Vercel fact) | AI is echoing back a known value |
+| "I recommend using Edge Functions for lower latency" | Assistant | **Yes** | Genuinely new recommendation |
+
+Without this distinction, every time the AI acknowledged a fact from memory, the pipeline would re-extract and re-process it — triggering unnecessary deduplication checks.
+
+## Tighter Inference Rules
+
+Facts tagged as `"inferred"` are held to a high bar: they require **specific, unambiguous evidence** from the conversation. The extraction pipeline does not extract generalizations, assumptions, or speculations.
+
+### What qualifies as a valid inference
+
+- The user says something that **directly implies** a specific fact (e.g., "I take my pills with breakfast" → inferred: takes medication in the morning)
+- The assistant provides a **concrete recommendation** that represents new information
+
+### What does NOT qualify
+
+- Broad generalizations unsupported by specific statements
+- Speculative conclusions about the user's intent or motivation
+- Re-statements of existing knowledge in different words
+
+### Example
+
+If a user says: _"I exercise Monday, Wednesday, and Friday, and I'm cutting carbs."_
+
+| Extracted | Source | Valid? |
+|-----------|--------|--------|
+| "Exercises on Monday, Wednesday, and Friday" | confirmed | Yes — directly stated |
+| "Reducing carbohydrate intake" | confirmed | Yes — directly stated |
+| "Implementing changes to exercise routine" | inferred | **No** — unsupported generalization |
+| "Motivated to improve health" | inferred | **No** — speculation |
+
+When in doubt, the system errs on the side of **not extracting**. A missing inference can be captured in a future conversation, but a false inference pollutes the memory store and is harder to correct.
+
+## Temporal Encoding
+
+Extracted facts are automatically enriched with a temporal suffix showing when they were learned. For example, a fact extracted from a session on March 15, 2026 would be stored as:
+
+```
+"Prefers TypeScript over JavaScript (mentioned 2026-03-15)"
+```
+
+The pipeline derives the date from `thread.lastMessageAt`, which reflects the timestamp of the most recent message in the session. This temporal annotation enables:
+
+- **Temporal reasoning** -- the LLM can understand when facts were learned and reason about time-sensitive information (e.g., "you mentioned this 3 months ago")
+- **Chronological retrieval** -- memories can be sorted by date, giving users and AI a timeline of how information evolved
+
+Temporal encoding is applied automatically during the extraction pipeline. No configuration is needed.
+
+See [Temporal Encoding](/concepts/temporal-encoding/) for a deeper look at how dates are derived and used in retrieval.
+
+## Reflection Pass
+
+Vitamem supports an optional **reflection pass** -- a second LLM call that validates and enriches the facts produced by the initial extraction. When enabled, the reflection pass:
+
+- **Catches contradictions** -- flags facts that conflict with each other or with existing memories
+- **Enriches vague facts** -- adds specificity to facts that are too general (e.g., "exercises sometimes" becomes "exercises 3 times per week")
+- **Detects missed information** -- identifies important facts that the initial extraction overlooked
+
+Enable reflection in your config:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  enableReflection: true,
+});
+```
+
+Reflection adds one additional LLM call per dormant transition. It is especially valuable for any domain where accuracy matters (health, finance, legal, education) and less critical for casual applications.
+
+See [Reflection](/concepts/reflection/) for details on how the reflection prompt works and how to customize it.
+
 ## What Gets Stored
 
 After extraction, each fact goes through the [deduplication pipeline](/concepts/deduplication/) before being saved. Only facts that are genuinely new (not already represented in the user's memory store) are persisted.
@@ -273,3 +407,5 @@ The final stored memory includes:
 - `threadId` -- for traceability
 - `pinned` -- `true` if the memory matched an auto-pin rule (see above)
 - `tags` -- string array for categorization (e.g. the auto-pin rule name)
+- `lastRetrievedAt` -- timestamp of the last time this memory was returned by a retrieval query (used by [active forgetting](/concepts/active-forgetting/))
+- `retrievalCount` -- how many times this memory has been retrieved (helps distinguish frequently-accessed facts from stale ones)

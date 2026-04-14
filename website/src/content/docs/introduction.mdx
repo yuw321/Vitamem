@@ -1,22 +1,22 @@
 ---
 title: "Introduction"
-description: "Memory for AI health companions -- built around how care relationships actually work."
+description: "Lifecycle-aware memory that extracts what matters when sessions rest and recalls it when users return."
 sidebar:
   order: 1
 ---
 
 # What is Vitamem?
 
-Vitamem is a TypeScript library that gives AI health companions **long-term memory that understands the rhythm of care**.
+Vitamem is a TypeScript library that gives AI applications **lifecycle-aware long-term memory**. Conversations have a natural lifecycle — active sessions, quiet pauses, natural endings. Vitamem tracks that lifecycle and uses it to decide *when* to extract and store facts, so your AI remembers what matters without the cost and noise of per-message embedding.
 
-Most memory libraries treat every conversation message the same -- embedding everything, storing everything equally. Vitamem is different. It models the natural lifecycle of a care relationship:
+Every conversation thread moves through four states:
 
-- An **active** session where the user is checking in
-- A **cooling** period between sessions (the relationship is still live)
-- A **dormant** break where facts are compressed and embedded once
-- A **closed** state when the relationship ends
+- **Active** — the session is live, messages are stored in full
+- **Cooling** — the session paused; a new message reactivates it
+- **Dormant** — facts are extracted, embedded once, and deduplicated
+- **Closed** — thread archived, memories live on and remain searchable
 
-This lifecycle approach makes Vitamem ideal for health companions, wellness chatbots, and counseling assistants -- AI that remembers users the way a caring friend would.
+This lifecycle model is the core insight. Instead of embedding every message in real time, Vitamem waits for the natural rest point, then extracts what matters. The result: fewer API calls, cleaner memories, and better retrieval.
 
 ## 3 Lines to Long-Term Memory
 
@@ -36,38 +36,42 @@ No manual adapter wiring. No boilerplate. Pass a provider name, an API key, and 
 
 Most AI memory systems embed every message as it arrives. This creates three problems:
 
-1. **Cost.** Embedding calls on every message add up fast, especially in long health consultations.
+1. **Cost.** Embedding calls on every message add up fast, especially in long conversations.
 2. **Noise.** Raw messages contain greetings, follow-up questions, and filler that dilute the memory store. Searching through noisy embeddings returns poor results.
-3. **Duplication.** A user who mentions "I take metformin" in five sessions gets five near-identical memories, wasting storage and confusing retrieval.
+3. **Duplication.** A user who mentions "I use TypeScript" in five sessions gets five near-identical memories, wasting storage and confusing retrieval.
 
 Vitamem takes a different approach: **lifecycle-aware memory extraction.**
 
-Instead of embedding messages in real time, Vitamem waits until a conversation session goes dormant. At that point, it sends the full conversation to the LLM with an extraction prompt, gets back structured facts (like "Has Type 2 diabetes" and "Takes metformin 500mg twice daily"), embeds those facts, and deduplicates them against existing memories using cosine similarity.
+Instead of embedding messages in real time, Vitamem waits until a conversation session goes dormant. At that point, it sends the full conversation to the LLM with an extraction prompt, gets back structured facts (like "Prefers TypeScript" and "Deploys on Vercel"), embeds those facts, and deduplicates them against existing memories using cosine similarity.
 
 The result:
 
-- **5-20x fewer embedding calls** -- computed once per session on extracted facts, not on every message
+- **~8x fewer embedding calls** -- computed once per session on extracted facts, not on every message -- plus significantly fewer LLM input tokens per chat through selective retrieval
 - **Cleaner memories** -- structured facts instead of raw conversational noise
 - **Automatic deduplication** -- genuinely new facts are preserved, redundant ones are discarded
 - **Better retrieval** -- searching over concise facts produces more relevant results than searching over chat messages
 
-This is how a caring professional remembers a patient: not by replaying every word of every appointment, but by maintaining a clean, updated record of the things that matter.
-
 ## The Core Insight
 
-Embeddings are expensive. Most systems embed every message as it arrives. Vitamem embeds **once per thread**, at the moment the conversation goes dormant -- on a compressed, deduplicated summary of extracted facts rather than raw messages.
+Context window stuffing is expensive. Most systems dump entire memory stores into every LLM call, wasting tokens on irrelevant information. Vitamem retrieves only what's relevant.
 
-This results in **5-20x fewer embedding calls** than naive per-message approaches while producing better, more meaningful memories.
+The real cost math:
+
+- **Embedding** costs ~$0.02/1M tokens — cheap
+- **LLM input tokens** cost $2.50–15/1M — 125–750x more expensive
+- The real savings come from sending **~300 tokens of relevant context** instead of 2,000+ tokens of everything
+
+Vitamem embeds **once per thread** at dormant transition, resulting in **~8x fewer embedding calls** — plus significantly fewer LLM input tokens per chat through selective retrieval, producing better, more meaningful memories.
 
 ## What Vitamem Stores
 
 When a thread goes dormant, Vitamem extracts and stores **facts about the user**:
 
 ```
-"Has Type 2 diabetes"           (source: confirmed)
-"Takes metformin daily"         (source: confirmed)
-"Exercises 3 times per week"    (source: inferred)
-"Prefers morning check-ins"     (source: inferred)
+"Prefers TypeScript over JavaScript"   (source: confirmed)
+"Deploys on Vercel"                    (source: confirmed)
+"Working on a React Native app"        (source: confirmed)
+"Prefers concise explanations"         (source: inferred)
 ```
 
 These facts are embedded as vectors and deduplicated against existing memories using cosine similarity. Later, when the user returns, the AI can retrieve relevant facts and respond like it actually remembers them.
@@ -75,22 +79,23 @@ These facts are embedded as vectors and deduplicated against existing memories u
 ## Key Features
 
   - **Lifecycle-aware threads** -- Active -> Cooling -> Dormant -> Closed. Automatically reactivates when users return.
-  - **5-20x fewer embedding calls** -- Computed once at dormant transition on extracted facts. Not on every message, not at search time.
+  - **Lower cost** -- Selective retrieval means fewer tokens per LLM call (send ~300 relevant tokens instead of 2,000+), plus ~8x fewer embedding calls through lifecycle batching.
   - **Semantic deduplication** -- Cosine similarity prevents storing the same fact twice. Genuinely new facts are preserved.
+  - **Temporal encoding & active forgetting** -- Facts are timestamped when learned, and older unretrieved memories naturally decay -- just like human memory. See [Temporal Encoding](/concepts/temporal-encoding/) and [Active Forgetting](/concepts/active-forgetting/).
   - **Unified config API** -- One object. Provider, API key, storage. Built-in adapters for OpenAI, Anthropic, and Ollama.
   - **autoRetrieve** -- Automatically inject relevant memories into every chat call. No manual retrieval needed.
   - **Zero production dependencies** -- No hidden supply chain risk. Provider SDKs are optional peer dependencies.
 
 ## Use Cases
 
-- **AI health companions** -- remembers symptoms, medications, conditions, and health goals
-- **Counseling assistants** -- maintains emotional context and tracks therapeutic progress
-- **Wellness apps** -- builds a richer user model over time without expensive per-message processing
-- **Chronic condition trackers** -- persists health history across long gaps between check-ins
+- **Health companions** -- remembers symptoms, medications, conditions, and health goals across sessions
+- **Coaching assistants** -- tracks goals, progress, and setbacks over time
+- **Tutoring systems** -- knows what students understand, where they struggle, and what they've mastered
+- **Support agents** -- recalls customer context, issue history, and preferences
 
 ## Next Steps
 
   - [**Installation**](/installation/) -- Provider setup, peer dependencies, and TypeScript config
   - [**Quickstart**](/quickstart/) -- Get up and running in under 5 minutes
-  - [**Tutorial**](/tutorial-first-project/) -- Build a health companion from scratch in 10 minutes
+  - [**Tutorial**](/tutorial-first-project/) -- Build your first Vitamem project in 10 minutes
   - [**Thread Lifecycle**](/concepts/thread-lifecycle/) -- Understand the four states and transitions

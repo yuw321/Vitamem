@@ -57,7 +57,7 @@ You can reconstruct a user's health timeline by querying their memories:
 ```typescript
 // Get a broad snapshot of the user's health history
 const healthSnapshot = await mem.retrieve({
-  userId: 'patient-789',
+  userId: 'user-789',
   query: 'health conditions medications lifestyle diet exercise',
   limit: 20,
 });
@@ -68,7 +68,7 @@ const healthSummary = healthSnapshot
   .map(m => `- ${m.content} (${m.source === 'confirmed' ? 'stated' : 'observed'})`)
   .join('\n');
 
-const systemPrompt = `You are a health companion for this patient.
+const systemPrompt = `You are a health companion for this user.
 
 Known health history:
 ${healthSummary}
@@ -83,10 +83,10 @@ When a user's health situation changes (new diagnosis, medication change, etc.),
 - The new fact is extracted at dormant transition
 - Deduplication compares it against existing memories
 - If it's genuinely new (e.g., "Now on insulin" when previously only metformin was recorded), it's saved
-- If it's an update to an existing fact (e.g., metformin dosage change), the new fact is saved and the old one remains — giving you a history of changes
+- If it's an update to an existing fact (e.g., A1C went from 7.4% to 6.8%), the **supersede** mechanism updates the existing memory in-place with the new value. The storage adapter tracks `previousValue` for vitals, giving you a history of changes.
 
 :::note
-Vitamem does not currently support "updating" an existing memory — all memories are append-only. If your app needs to track that a user *stopped* a medication, add explicit extraction guidance for that in your prompt.
+Supersede is automatic when `supersedeThreshold` is configured (default: 0.75). Facts with cosine similarity between the supersede threshold and the deduplication threshold (default: 0.92) update the existing memory rather than creating a duplicate. If your app needs to track that a user *stopped* a medication, add explicit extraction guidance for that in your prompt.
 :::
 
 ## Privacy Considerations

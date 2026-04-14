@@ -57,10 +57,23 @@ Provide **either** a string shortcut **or** a `StorageAdapter` instance.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `preset` | `PresetName` | — | Named timeout preset (`"daily-checkin"`, `"weekly-therapy"`, `"on-demand"`, `"long-term"`). Explicit timeout values override preset values. |
 | `coolingTimeoutMs` | `number` | `21600000` (6h) | Inactivity before active → cooling in `sweepThreads()` |
+| `dormantTimeoutMs` | `number` | Same as `coolingTimeoutMs` | Time in cooling before cooling → dormant in `sweepThreads()` |
 | `closedTimeoutMs` | `number` | `2592000000` (30d) | Time in dormant before auto-close in `sweepThreads()` |
 | `embeddingConcurrency` | `number` | `5` | Max concurrent embedding API calls |
 | `autoRetrieve` | `boolean` | `false` | Inject relevant memories into every `chat()` call |
+| `structuredExtractionRules` | `StructuredExtractionRule[]` | — | Rules for classifying extracted facts into structured profile fields. Use `HEALTH_STRUCTURED_RULES` for health domains. |
+
+### Retrieval Controls
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `onRetrieve` | `(memories, query) => MemoryMatch[]` | — | Hook to filter or reorder memories after the retrieval pipeline runs |
+| `minScore` | `number` | `0` | Minimum cosine similarity score for retrieved memories (0 = no filtering) |
+| `recencyWeight` | `number` | `0` | Blend factor (0--1) between cosine similarity and recency. `0` = pure cosine, `1` = pure recency. |
+| `recencyMaxAgeMs` | `number` | `7776000000` (90d) | Normalization window for recency scoring |
+| `diversityWeight` | `number` | `0` | MMR diversity weight (0--1). `0` = standard top-K, higher values promote diversity. |
 
 ### Memory Intelligence
 
@@ -71,6 +84,14 @@ Provide **either** a string shortcut **or** a `StorageAdapter` instance.
 | `deduplicationThreshold` | `number` | `0.92` | Cosine similarity threshold for exact duplicate detection. Facts with similarity above this are discarded. |
 | `supersedeThreshold` | `number` | `0.75` | Cosine similarity threshold for memory supersede. Facts with similarity between this and `deduplicationThreshold` update the existing memory in-place (e.g., A1C 7.4% → 6.8%). |
 | `autoPinRules` | `AutoPinRule[]` | — | Rules that automatically pin critical memories during extraction. Use the built-in `HEALTH_AUTO_PIN_RULES` for health domains. |
+| `forgetting` | `ForgettingConfig` | `undefined` | Enable active forgetting with decay model. If not set, decay is disabled. |
+| `forgetting.forgettingHalfLifeMs` | `number` | `15552000000` (180 days) | Time in ms until unretrieved memory relevance halves |
+| `forgetting.minRetrievalScore` | `number` | `0.1` | Score threshold below which memories are archival candidates |
+| `enableReflection` | `boolean` | `false` | Enable a second LLM call to validate and enrich extracted facts |
+| `reflectionPrompt` | `string` | built-in | Custom prompt override for the reflection LLM call |
+| `prioritySignaling` | `boolean` | `true` | Prepend priority markers (`[CRITICAL]`, `[IMPORTANT]`, `[INFO]`) to each memory line based on source and pinned status |
+| `chronologicalRetrieval` | `boolean` | `true` | Sort retrieved memories by `createdAt` and group by month/year with date headers |
+| `cacheableContext` | `boolean` | `false` | Split memory context into stable prefix (profile + pinned) and dynamic suffix (retrieved) for LLM caching |
 
 #### Custom Memory Context Formatter
 
@@ -81,7 +102,7 @@ const vm = await createVitamem({
   storage: "ephemeral",
   autoRetrieve: true,
   memoryContextFormatter: (memories, query) =>
-    `Known facts about this patient:\n${memories.map(m => `• ${m.content}`).join("\n")}`,
+    `Known facts about this user:\n${memories.map(m => `• ${m.content}`).join("\n")}`,
 });
 ```
 
@@ -267,6 +288,37 @@ const memories = await mem.retrieve({
 
 ---
 
+### `pinMemory(memoryId)`
+
+Pins a memory so it is always included in retrieval results (score 1.0) and exempt from active forgetting decay.
+
+```typescript
+await mem.pinMemory("memory-abc");
+```
+
+---
+
+### `unpinMemory(memoryId)`
+
+Removes the pinned status from a memory.
+
+```typescript
+await mem.unpinMemory("memory-abc");
+```
+
+---
+
+### `getOrCreateThread(userId)`
+
+Returns the user's latest active or cooling thread, or creates a new one if none exists.
+
+```typescript
+const thread = await mem.getOrCreateThread("user-123");
+// thread.state === 'active' or 'cooling'
+```
+
+---
+
 ### `getThread(threadId)`
 
 Returns the current thread object, or `null` if not found.
@@ -280,12 +332,14 @@ console.log(thread?.state); // 'active' | 'cooling' | 'dormant' | 'closed'
 
 ### `triggerDormantTransition(threadId)`
 
-Transitions a thread from active → cooling → dormant and runs the embedding pipeline (extract, embed, deduplicate, save).
+Transitions a thread to dormant (via cooling if currently active) and runs the embedding pipeline (extract, reflect, classify, embed, deduplicate, save).
 
 ```typescript
-await mem.triggerDormantTransition(thread.id);
-// Thread is now 'dormant', memories are saved
+const stats = await mem.triggerDormantTransition(thread.id);
+console.log(`Saved: ${stats.memoriesSaved}, Superseded: ${stats.memoriesSuperseded}, Deduped: ${stats.memoriesDeduped}`);
 ```
+
+**Returns:** `Promise<{ memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted, profileFieldsUpdated }>`
 
 ---
 
@@ -311,7 +365,7 @@ setInterval(() => mem.sweepThreads(), 60_000);
 
 Transitions applied:
 - **active → cooling** if no messages for `coolingTimeoutMs`
-- **cooling → dormant** (runs embedding pipeline)
+- **cooling → dormant** if cooling for `dormantTimeoutMs` (runs embedding pipeline)
 - **dormant → closed** if dormant for `closedTimeoutMs`
 
 :::note
@@ -337,3 +391,188 @@ Deletes all memories for a user. Use for GDPR right-to-erasure requests.
 ```typescript
 await mem.deleteUserData("user-123");
 ```
+
+---
+
+### `getProfile(userId)`
+
+Returns the user's structured profile, or `null` if profile storage is not supported or no profile exists.
+
+```typescript
+const profile = await mem.getProfile("user-123");
+if (profile) {
+  console.log(profile.allergies); // ['penicillin']
+  console.log(profile.vitals);    // { a1c: { value: 6.8, unit: '%' } }
+}
+```
+
+**Returns:** `UserProfile | null`
+
+---
+
+### `updateProfile(userId, updates)`
+
+Updates the user's structured profile with merge semantics. Creates the profile if it doesn't exist. No-op if the storage adapter does not support profiles.
+
+```typescript
+await mem.updateProfile("user-123", {
+  conditions: ["Type 2 diabetes"],
+  allergies: ["penicillin"],
+});
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `userId` | `string` | The user whose profile to update |
+| `updates` | `Partial<Omit<UserProfile, "userId">>` | Fields to merge into the profile |
+
+---
+
+## Public Exports
+
+In addition to the `Vitamem` facade, the library exports several utility functions for advanced use cases.
+
+### Memory Decay & Archival
+
+#### `applyDecay(results, config)`
+
+Apply time-based decay scoring to memory matches. Returns re-scored and re-sorted memories with adjusted relevance. Pinned memories are exempt from decay.
+
+```typescript
+import { applyDecay } from "vitamem";
+
+const scored = applyDecay(memoryMatches, {
+  forgettingHalfLifeMs: 15552000000, // 180 days
+});
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `results` | `MemoryMatch[]` | Memory matches to apply decay to |
+| `config` | `{ forgettingHalfLifeMs?: number }` | Decay configuration |
+
+**Returns:** `MemoryMatch[]` — Re-scored and re-sorted by decayed score.
+
+---
+
+#### `shouldArchive(memory, config)`
+
+Check if a memory should be archived based on its decay score falling below `minRetrievalScore`. Pinned memories always return `false`.
+
+```typescript
+import { shouldArchive } from "vitamem";
+
+const archive = shouldArchive(memory, {
+  minRetrievalScore: 0.1,
+  forgettingHalfLifeMs: 15552000000,
+});
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `memory` | `Memory` | The memory to evaluate |
+| `config` | `{ minRetrievalScore?: number; forgettingHalfLifeMs?: number }` | Archive thresholds |
+
+**Returns:** `boolean` — `true` if the memory's decay score falls below the threshold.
+
+---
+
+### Extraction Reflection
+
+#### `reflectOnExtraction(extractedFacts, existingMemories, originalMessages, llm, customPrompt?)`
+
+Run a second LLM call to validate extracted facts against existing memories and conversation. Checks accuracy, detects conflicts, catches missed facts, and enriches vague facts. If reflection fails (e.g., invalid JSON), returns original facts unchanged so the pipeline is never broken.
+
+```typescript
+import { reflectOnExtraction } from "vitamem";
+
+const result = await reflectOnExtraction(
+  extractedFacts,
+  existingMemories,
+  conversationMessages,
+  llmAdapter,
+);
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `extractedFacts` | `ExtractedFact[]` | Facts from the extraction step |
+| `existingMemories` | `Array<{ content: string; source: string }>` | User's current stored memories |
+| `originalMessages` | `Array<{ role: string; content: string }>` | The original conversation |
+| `llm` | `{ chat: (...) => Promise<string> }` | LLM adapter with a `chat` method |
+| `customPrompt` | `string?` | Optional custom system prompt |
+
+**Returns:** `Promise<ReflectionResult>`
+
+---
+
+#### `applyReflectionResult(result)`
+
+Convert a `ReflectionResult` into a flat array of `ExtractedFact[]` for the pipeline. Filters out facts with action `"remove"` and merges in missed facts.
+
+```typescript
+import { applyReflectionResult } from "vitamem";
+
+const finalFacts = applyReflectionResult(reflectionResult);
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `result` | `ReflectionResult` | The result from `reflectOnExtraction()` |
+
+**Returns:** `ExtractedFact[]` — Cleaned, enriched facts ready for the embedding pipeline.
+
+---
+
+### Structured Extraction
+
+#### `classifyStructuredFacts(facts, rules)`
+
+Classify extracted facts into structured profile fields using pattern-matching rules.
+
+```typescript
+import { classifyStructuredFacts, HEALTH_STRUCTURED_RULES } from "vitamem";
+
+const structuredFacts = classifyStructuredFacts(extractedFacts, HEALTH_STRUCTURED_RULES);
+```
+
+---
+
+#### `applyStructuredFacts(profile, facts)`
+
+Apply classified structured facts to a user profile with set/add/remove semantics.
+
+```typescript
+import { applyStructuredFacts } from "vitamem";
+
+const updatedProfile = applyStructuredFacts(currentProfile, structuredFacts);
+```
+
+---
+
+### Other Exports
+
+| Export | Description |
+|--------|-------------|
+| `PRESETS` | Built-in preset configurations |
+| `canTransition(from, to)` | Check if a thread state transition is valid |
+| `transition(thread, to)` | Apply a state transition to a thread |
+| `shouldCool(thread, timeoutMs)` | Check if a thread should transition to cooling |
+| `shouldGoDormant(thread, timeoutMs)` | Check if a thread should transition to dormant |
+| `reactivate(thread)` | Reactivate a cooling thread back to active |
+| `extractMemories(messages, llm, sessionDate?)` | Extract memories from messages using an LLM |
+| `cosineSimilarity(a, b)` | Compute cosine similarity between two vectors |
+| `isDuplicate(a, b, threshold)` | Check if two embeddings are duplicates |
+| `deduplicateFacts(facts, existing)` | Deduplicate extracted facts against existing memories |
+| `validateExtraction(memories)` | Validate extracted memory structure |
+| `runEmbeddingPipeline(...)` | Run the full embedding pipeline (extract, embed, dedup, save) |
+| `applyRecencyWeighting(results, weight, maxAge)` | Apply recency-based score weighting |
+| `applyMMR(candidates, weight, limit)` | Apply Maximal Marginal Relevance for diverse retrieval |
+| `EphemeralAdapter` | In-memory storage adapter |
+| `SupabaseAdapter` | Supabase-backed storage adapter |
+| `createOpenAIAdapter(opts)` | Factory for OpenAI LLM adapter |
+| `createAnthropicAdapter(opts)` | Factory for Anthropic LLM adapter |
+| `createOllamaAdapter(opts)` | Factory for Ollama LLM adapter |
+| `HEALTH_AUTO_PIN_RULES` | Built-in auto-pin rules for health domains |
+| `HEALTH_STRUCTURED_RULES` | Built-in structured extraction rules for health domains |
+| `createEmptyProfile(userId)` | Create an empty `UserProfile` with default values |

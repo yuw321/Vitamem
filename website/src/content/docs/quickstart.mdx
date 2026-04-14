@@ -32,7 +32,7 @@ For Anthropic, change `provider` to `"anthropic"` and supply your Anthropic
   API key. For local models, use `provider: "ollama"` with no API key.
 :::
 
-## Step 2: Start a health companion session
+## Step 2: Start a conversation
 
 ```typescript
 // Create a thread for a user
@@ -42,14 +42,14 @@ console.log(thread.state); // 'active'
 // Chat -- messages are stored, LLM responds naturally
 const { reply } = await mem.chat({
   threadId: thread.id,
-  message: "I've been managing Type 2 diabetes for 3 years. I take metformin daily.",
+  message: "I prefer dark mode, use TypeScript, and deploy on Vercel.",
 });
 console.log(reply); // AI response
 
 // Continue the conversation
 await mem.chat({
   threadId: thread.id,
-  message: "My doctor also recommended I exercise 30 minutes a day.",
+  message: "I'm also working on a React Native mobile app right now.",
 });
 ```
 
@@ -76,16 +76,16 @@ When the user returns, retrieve relevant memories to enrich the conversation:
 ```typescript
 const memories = await mem.retrieve({
   userId: "user-123",
-  query: "health conditions and medications",
+  query: "tools and preferences",
   limit: 5,
 });
 
 for (const m of memories) {
   console.log(`${m.content} (${m.source}, score: ${m.score.toFixed(3)})`);
 }
-// "Has Type 2 diabetes" (confirmed, score: 0.962)
-// "Takes metformin daily" (confirmed, score: 0.941)
-// "Should exercise 30 minutes daily" (inferred, score: 0.887)
+// "Prefers TypeScript over JavaScript" (confirmed, score: 0.962)
+// "Deploys on Vercel" (confirmed, score: 0.941)
+// "Working on a React Native mobile app" (confirmed, score: 0.887)
 ```
 
 You can now inject these memories into the system prompt of the new conversation so the AI responds with full context.
@@ -106,11 +106,11 @@ const mem = await createVitamem({
 // into the system prompt on every chat() call
 const { reply, memories } = await mem.chat({
   threadId: newThread.id,
-  message: "What medications am I on?",
+  message: "What tools do I use?",
 });
 
 console.log(memories);
-// [{ content: "Takes metformin daily", source: "confirmed", score: 0.95 }]
+// [{ content: "Prefers TypeScript over JavaScript", source: "confirmed", score: 0.95 }]
 ```
 
 ## Step 6: Stream responses
@@ -120,7 +120,7 @@ For real-time UIs, use `chatStream()` to receive tokens as they are generated:
 ```typescript
 const { stream, thread: streamThread } = await mem.chatStream({
   threadId: thread.id,
-  message: "What medications am I taking?",
+  message: "What were my preferences again?",
 });
 
 for await (const chunk of stream) {
@@ -146,9 +146,33 @@ const mem = await createVitamem({
 
 See the [Supabase setup](/api-reference/storage-adapter/#supabaseadapter) for the required SQL schema.
 
+## Optional: Enable Phase 1 Features
+
+Vitamem includes several optional features that improve memory quality and retrieval. Add any of these to your config:
+
+```typescript
+const mem = await createVitamem({
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY!,
+  storage: "ephemeral",
+  enableReflection: true,  // Validate extracted facts with a second LLM pass
+  forgetting: {
+    forgettingHalfLifeMs: 90 * 86400000,  // Older unretrieved memories decay
+    minRetrievalScore: 0.1,
+  },
+  prioritySignaling: true,  // Add [CRITICAL]/[IMPORTANT]/[INFO] markers to context
+});
+```
+
+These are all optional and independent -- enable whichever ones fit your use case. See [Reflection](/concepts/reflection/), [Active Forgetting](/concepts/active-forgetting/), and [Memory Formatting](/concepts/memory-formatting/) for details.
+
+:::tip[Building a health companion?]
+See the [Health Companion Guide](/guides/health-companion/) for health-specific configuration including structured profiles, auto-pinning, and medical extraction rules.
+:::
+
 ## Next Steps
 
 - [Installation](/installation/) -- provider setup, peer dependencies, and TypeScript config
 - [Thread Lifecycle](/concepts/thread-lifecycle/) -- understand how state transitions work
-- [Health Companion Guide](/guides/health-companion/) -- a complete health companion pattern
+- [Health Companion Guide](/guides/health-companion/) -- health-specific profiles, rules, and auto-pinning
 - [API Reference](/api-reference/create-vitamem/) -- full function and type documentation

@@ -30,7 +30,12 @@ async function runEmbeddingPipeline(
   llm: LLMAdapter,
   storage: StorageAdapter,
   deduplicationThreshold?: number,
-  concurrency?: number,
+  supersedeThreshold?: number,
+  embeddingConcurrency?: number,
+  autoPinRules?: AutoPinRule[],
+  structuredRules?: StructuredExtractionRule[],
+  enableReflection?: boolean,
+  reflectionPrompt?: string,
 ): Promise<EmbeddingPipelineResult>;
 ```
 
@@ -40,36 +45,56 @@ async function runEmbeddingPipeline(
 |-----------|------|---------|-------------|
 | `thread` | `Thread` | -- | The thread that transitioned to dormant. Used for `userId` and `threadId` when saving memories. |
 | `messages` | `Message[]` | -- | The full conversation history to extract facts from. |
-| `llm` | `LLMAdapter` | -- | The LLM adapter used for extraction (`extractMemories`) and embedding (`embed`). |
-| `storage` | `StorageAdapter` | -- | The storage adapter for reading existing memories and saving new ones. |
+| `llm` | `LLMAdapter` | -- | The LLM adapter used for extraction (`extractMemories`), embedding (`embed`), and reflection (`chat`). |
+| `storage` | `StorageAdapter` | -- | The storage adapter for reading existing memories, saving new ones, and updating profiles. |
 | `deduplicationThreshold` | `number` | `0.92` | Cosine similarity threshold for deduplication. Facts with similarity >= this value to any existing memory are considered duplicates and discarded. |
-| `concurrency` | `number` | `5` | Maximum number of concurrent embedding API calls. Controls how many `llm.embed()` calls run in parallel. |
+| `supersedeThreshold` | `number` | `0.75` | Cosine similarity threshold for superseding. Facts with similarity >= this value and < `deduplicationThreshold` update the existing memory in-place. |
+| `embeddingConcurrency` | `number` | `5` | Maximum number of concurrent embedding API calls. Controls how many `llm.embed()` calls run in parallel. |
+| `autoPinRules` | `AutoPinRule[]` | `[]` | Rules that automatically pin critical memories during save/supersede. |
+| `structuredRules` | `StructuredExtractionRule[]` | `undefined` | Rules for classifying extracted facts into structured profile fields. Facts matching rules are routed to profile updates instead of the embedding pipeline. |
+| `enableReflection` | `boolean` | `false` | Enable a second LLM call to validate and enrich extracted facts before embedding. |
+| `reflectionPrompt` | `string` | built-in | Custom prompt override for the reflection LLM call. |
 
 ### Returns
 
 ```typescript
 interface EmbeddingPipelineResult {
-  memoriesSaved: number;    // Facts that passed deduplication and were saved
-  memoriesDeduped: number;  // Facts that were discarded as duplicates
-  totalExtracted: number;   // Total facts extracted by the LLM
+  memoriesSaved: number;       // Facts that passed deduplication and were saved as new memories
+  memoriesDeduped: number;     // Facts that were discarded as duplicates
+  memoriesSuperseded: number;  // Facts that updated an existing memory in-place
+  totalExtracted: number;      // Total facts extracted by the LLM (before structured classification)
+  profileFieldsUpdated: number; // Structured facts routed to user profile updates
+  reflection?: {
+    factsModified: number;     // Facts enriched by the reflection pass
+    factsRemoved: number;      // Facts removed by the reflection pass
+    missedFactsAdded: number;  // New facts discovered by the reflection pass
+    conflictsFound: number;    // Conflicts detected between new and existing facts
+  };
 }
 ```
 
-The invariant `memoriesSaved + memoriesDeduped === totalExtracted` always holds.
+For freeform facts (those not routed to profile fields), the relationship `memoriesSaved + memoriesDeduped + memoriesSuperseded` equals the number of facts that entered the embedding pipeline. The `reflection` field is only present when `enableReflection` is `true`.
 
 ### Pipeline Steps
 
-The function executes five steps in order:
+The function executes these steps in order:
 
-1. **Extract facts** -- Calls `llm.extractMemories(messages)` to get structured facts from the conversation. Each fact has a `content` string and a `source` (`"confirmed"` or `"inferred"`).
+1. **Extract facts** -- Calls `llm.extractMemories(messages, sessionDate)` to get structured facts from the conversation. Each fact has a `content` string, a `source` (`"confirmed"` or `"inferred"`), and optional `tags` and profile fields. The session date is derived from `thread.lastMessageAt`.
 
-2. **Embed facts** -- Calls `llm.embed(fact.content)` for each extracted fact. This step respects the `concurrency` parameter, running at most N embedding calls in parallel using a worker pool.
+2. **Reflection pass** *(optional)* -- If `enableReflection` is `true`, calls `reflectOnExtraction()` to validate and enrich the extracted facts via a second LLM call. Catches contradictions, enriches vague facts, and detects missed information. On failure, the original facts are kept unchanged.
 
-3. **Load existing memories** -- Calls `storage.getMemories(thread.userId)` to get all current memories for the user, needed for deduplication.
+3. **Structured classification** *(optional)* -- If `structuredRules` are provided and the storage adapter supports `updateProfileField`, classifies facts against the rules. Matching facts are routed to profile field updates (no embedding needed). Only the remaining freeform facts continue to the embedding pipeline.
 
-4. **Deduplicate** -- Compares each new fact's embedding against all existing memory embeddings (and already-accepted new facts) using cosine similarity. Facts with similarity >= `deduplicationThreshold` to any existing memory are discarded.
+4. **Embed facts** -- Calls `llm.embed(fact.content)` for each freeform fact. This step respects the `embeddingConcurrency` parameter, running at most N embedding calls in parallel using a worker pool.
 
-5. **Save unique facts** -- Calls `storage.saveMemory()` for each unique fact, including its embedding vector.
+5. **Load existing memories** -- Calls `storage.getMemories(thread.userId)` to get all current memories for the user, needed for deduplication.
+
+6. **Classify and persist** -- Compares each new fact's embedding against all existing memory embeddings (and already-accepted new facts from this batch) using cosine similarity. Each fact is classified as one of:
+   - **Skip** (similarity >= `deduplicationThreshold`): duplicate, discarded
+   - **Supersede** (similarity >= `supersedeThreshold` and < `deduplicationThreshold`): updates the existing memory in-place via `storage.updateMemory()`, preserving the higher-confidence source and existing pin status
+   - **Save** (similarity < `supersedeThreshold`): saved as a new memory via `storage.saveMemory()`
+
+   During save and supersede, auto-pin rules are evaluated and matching memories are automatically pinned.
 
 ### Example
 
@@ -82,19 +107,22 @@ const result = await runEmbeddingPipeline(
   llmAdapter,
   storageAdapter,
   0.90, // slightly lower dedup threshold
+  0.75, // supersede threshold
   3,    // conservative concurrency for rate-limited APIs
 );
 
 console.log(`Extracted: ${result.totalExtracted}`);
 console.log(`Saved: ${result.memoriesSaved}`);
+console.log(`Superseded: ${result.memoriesSuperseded}`);
 console.log(`Deduped: ${result.memoriesDeduped}`);
+console.log(`Profile fields updated: ${result.profileFieldsUpdated}`);
 ```
 
 ---
 
 ## Concurrency Behavior
 
-The `concurrency` parameter controls how many `llm.embed()` calls execute simultaneously. This is implemented using a worker pool pattern where N workers each process one item at a time from a shared queue.
+The `embeddingConcurrency` parameter controls how many `llm.embed()` calls execute simultaneously. This is implemented using a worker pool pattern where N workers each process one item at a time from a shared queue.
 
 ```
 concurrency = 3, facts = 8
@@ -111,7 +139,8 @@ Worker 3: [fact3] [fact6]
 | OpenAI (paid tier) | `5` (default) |
 | OpenAI (free tier) | `2-3` |
 | Anthropic + OpenAI embeddings | `5` |
-| Ollama (local) | `10+` (limited by hardware, not rate limits) |
+| Ollama (local, single GPU) | `1` (Ollama processes requests sequentially) |
+| Ollama (multi-GPU / cluster) | `3-5` (match your throughput capacity) |
 | Custom embedding service | Depends on your service's capacity |
 
 The facade passes `config.embeddingConcurrency` (default: `5`) to this function. Set it in your `createVitamem` config:
@@ -137,7 +166,15 @@ The result type returned by `runEmbeddingPipeline()`.
 interface EmbeddingPipelineResult {
   memoriesSaved: number;
   memoriesDeduped: number;
+  memoriesSuperseded: number;
   totalExtracted: number;
+  profileFieldsUpdated: number;
+  reflection?: {
+    factsModified: number;
+    factsRemoved: number;
+    missedFactsAdded: number;
+    conflictsFound: number;
+  };
 }
 ```
 
@@ -145,7 +182,10 @@ interface EmbeddingPipelineResult {
 |-------|------|-------------|
 | `memoriesSaved` | `number` | Number of new unique memories persisted to storage |
 | `memoriesDeduped` | `number` | Number of extracted facts discarded as duplicates |
+| `memoriesSuperseded` | `number` | Number of existing memories updated in-place with newer content |
 | `totalExtracted` | `number` | Total number of facts the LLM extracted from the conversation |
+| `profileFieldsUpdated` | `number` | Number of structured facts routed to user profile updates |
+| `reflection` | `object?` | Reflection pass statistics (only present when `enableReflection` is `true`) |
 
 ---
 
@@ -157,7 +197,7 @@ In the standard Vitamem facade, the pipeline runs in two scenarios:
 
 2. **`sweepThreads()`** -- For each cooling thread that has exceeded the cooling timeout, transitions to dormant and runs the pipeline.
 
-Both paths call `runEmbeddingPipeline()` with a deduplication threshold of `0.92` and the configured `embeddingConcurrency`.
+Both paths call `runEmbeddingPipeline()` with the configured thresholds (`deduplicationThreshold`, `supersedeThreshold`), `embeddingConcurrency`, `autoPinRules`, `structuredExtractionRules`, and reflection settings.
 
 :::note
 The pipeline is idempotent with respect to deduplication. If you accidentally run it twice on the same thread, the second run will extract the same facts but they will all be deduplicated against the memories saved by the first run.
