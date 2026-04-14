@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/brand/logo-final.png" alt="vitamem" width="120" />
+  <img src="website/public/brand/logo-final.png" alt="vitamem" width="120" />
 </p>
 
 <h1 align="center">Vitamem</h1>
 
 <p align="center">
-  <strong>Memory for AI health companions — built around how care relationships actually work.</strong>
+  <strong>Lifecycle-aware long-term memory for AI.</strong>
 </p>
 
 <p align="center">
@@ -17,9 +17,9 @@
 
 ---
 
-Most memory libraries treat every message the same — embedding every interaction, storing everything equally. Vitamem is different. It models the natural rhythm of care relationships: an active check-in, a quiet period between sessions, a long dormant break, and eventual closure.
+Conversations have a lifecycle. Vitamem tracks it — extracting what matters when sessions rest, deduplicating against what's already known, and recalling it when users return.
 
-This makes Vitamem the right choice for AI health companions, wellness chatbots, and counseling assistants — AI that talks to users like a friend who actually remembers them.
+Most memory libraries embed every message as it arrives, producing noisy stores and redundant entries. Vitamem waits until a session goes dormant, then extracts structured facts, embeds them once, and deduplicates. This means **~8x fewer embedding calls**, **cleaner memories**, and **selective retrieval** that sends only relevant context to the LLM — not the entire store. Whether you're building a health companion, coaching assistant, tutoring system, or support agent, Vitamem gives your AI persistent memory with a single config object.
 
 ## How It Works
 
@@ -37,14 +37,14 @@ Active → Cooling → Dormant → Closed
 | **Dormant** | The key transition. Facts are extracted from the conversation, deduplicated against existing memories, and **embeddings are computed once** on the compressed result. |
 | **Closed** | Thread archived. Extracted memories live on and remain searchable indefinitely. |
 
-Embeddings are computed **once per thread** at dormant transition — not on every message. A 50-message thread typically yields 5–8 extracted facts, meaning **5–20x fewer embedding calls** than naive per-message approaches.
+Embeddings are computed **once per thread** at dormant transition — not on every message. A 50-message thread typically yields 5–8 extracted facts, meaning **~8x fewer embedding calls** than naive per-message approaches. Combined with selective retrieval that sends only relevant context to the LLM, this significantly reduces token costs per chat.
 
 ## Use Cases
 
-- **AI health companions** — remembers symptoms, medications, conditions, and health goals across sessions
-- **Counseling assistants** — maintains emotional context, tracks progress, and naturally recalls what matters
-- **Wellness apps** — builds a rich user model over time without expensive per-message processing
-- **Chronic condition trackers** — captures health history that persists across long gaps between check-ins
+- **Health companions** — remembers symptoms, medications, conditions, and health goals across sessions
+- **Coaching assistants** — tracks goals, progress, and setbacks over time
+- **Tutoring systems** — knows what students understand, where they struggle, and what they've mastered
+- **Support agents** — recalls customer context, issue history, and preferences
 
 ## Install
 
@@ -74,24 +74,24 @@ const mem = await createVitamem({
   storage: 'ephemeral',
 });
 
-// 2. Start a health companion session
+// 2. Start a conversation
 const thread = await mem.createThread({ userId: 'user-123' });
 
 const { reply } = await mem.chat({
   threadId: thread.id,
-  message: "I've been managing Type 2 diabetes for 3 years. I take metformin daily.",
+  message: "I prefer dark mode, use TypeScript, and deploy on Vercel.",
 });
-// AI responds naturally, facts stored
 
-// 3. After the session goes quiet, extract and embed memories
+// 3. Session rests → extract facts, embed once, deduplicate, save
 await mem.triggerDormantTransition(thread.id);
 
-// 4. Later — retrieve memories to enrich a new conversation
-const memories = await mem.retrieve({
-  userId: 'user-123',
-  query: 'health conditions and medications',
+// 4. Next session — relevant memories appear automatically
+const newThread = await mem.createThread({ userId: 'user-123' });
+const { reply: reply2 } = await mem.chat({
+  threadId: newThread.id,
+  message: "What tools do I use?",
 });
-// [{ content: 'Has Type 2 diabetes', source: 'confirmed', score: 0.96 }, ...]
+// Vitamem auto-retrieves: "Prefers TypeScript", "Deploys on Vercel", ...
 ```
 
 ### Local Models (Ollama)
@@ -116,7 +116,7 @@ const mem = await createVitamem({
 
 const { reply, memories } = await mem.chat({
   threadId: thread.id,
-  message: "How's my blood sugar doing?",
+  message: "What were my preferences again?",
 });
 // memories: the retrieved memories that were used (for transparency)
 ```
@@ -124,8 +124,13 @@ const { reply, memories } = await mem.chat({
 ## Key Features
 
 - **Lifecycle-aware threads** — Active → Cooling → Dormant → Closed with configurable timeouts. Automatically reactivates when users return.
-- **Health-context memory extraction** — Facts are pulled from both user and assistant messages when a thread goes dormant. No manual tagging.
-- **5–20x fewer embedding calls** — Computed once at dormant transition on extracted facts, not on every message or at search time.
+- **Smart memory extraction** — Facts are pulled from both user and assistant messages when a thread goes dormant. No manual tagging.
+- **Temporal encoding** — Facts include the date they were learned, enabling temporal reasoning (e.g., "Prefers TypeScript (mentioned 2024-01-15)").
+- **Active forgetting** — Memory relevance naturally decays over time; pinned memories are exempt.
+- **Reflection pass** — Optional second LLM call validates extraction quality and catches contradictions.
+- **Priority signaling** — Memories tagged `[CRITICAL]`/`[IMPORTANT]`/`[INFO]` to guide LLM attention.
+- **Cache-friendly context** — Stable prefix + dynamic suffix enables LLM prompt caching.
+- **Lower cost** — Selective retrieval means fewer tokens per LLM call, plus ~8x fewer embedding calls through lifecycle batching.
 - **Semantic deduplication** — Cosine similarity prevents redundant memories. Genuinely new facts are preserved.
 - **Built-in provider adapters** — OpenAI, Anthropic, Ollama (local models) out of the box. Or bring your own.
 - **Auto-retrieve** — Optionally inject relevant memories into chat context automatically.
@@ -175,12 +180,22 @@ const mem = await createVitamem({
   closedTimeoutMs: 30 * 24 * 3600000,    // default: 30 days
   embeddingConcurrency: 5,                // default: 5
   autoRetrieve: false,                    // default: false
+
+  // Phase 1: Cognitive Memory (optional)
+  // enableReflection: true,
+  // forgetting: {
+  //   forgettingHalfLifeMs: 180 * 86400000,  // 180 days
+  //   minRetrievalScore: 0.1,
+  // },
+  // prioritySignaling: true,
+  // chronologicalRetrieval: true,
+  // cacheableContext: false,
 });
 ```
 
 ## Documentation
 
-Full documentation at **[vitamem.dev](https://vitamem.dev)** — quickstart, API reference, provider guides, health companion tutorial, and more.
+Full documentation at **[vitamem.dev](https://vitamem.dev)** — quickstart, API reference, provider guides, tutorials, and more.
 
 Documentation is built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.build). To preview locally:
 
@@ -194,7 +209,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome.
 
 ## Disclaimer
 
-Vitamem is a developer library for memory management, not a medical device. It is not intended to diagnose, treat, cure, or prevent any medical condition. Applications using Vitamem are responsible for their own privacy policies, compliance requirements, and safety disclosures. See [full disclaimer](https://vitamem.dev/legal/disclaimer/).
+Vitamem is a developer library for AI memory management, not a medical device. If you build health-related applications, you are responsible for compliance (HIPAA, GDPR, etc.) and safety disclosures. See [full disclaimer](https://vitamem.dev/legal/disclaimer/).
 
 ## License
 
