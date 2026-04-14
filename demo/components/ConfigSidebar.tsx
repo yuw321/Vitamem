@@ -1,5 +1,3 @@
-"use client";
-
 import type { ConfigResponse } from "@/lib/types";
 
 interface ConfigSidebarProps {
@@ -93,13 +91,15 @@ export default function ConfigSidebar({
         <div className="px-5 py-3 border-t border-[var(--border)] shrink-0">
           <p className="text-[11px] text-[var(--silver)] leading-relaxed">
             Edit <code className="text-[var(--teal-lt)]">.env</code> and restart
-            to change settings.
+            to change provider settings.
           </p>
         </div>
       </div>
     </>
   );
 }
+
+/* ─── Sub-components ────────────────────────────────────────────────────── */
 
 function ConfigRow({
   label,

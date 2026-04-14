@@ -10,15 +10,26 @@ export async function GET() {
     const memories = await storage.getMemories(userId);
 
     return NextResponse.json({
-      memories: memories.map((m) => ({
-        id: m.id,
-        content: m.content,
-        source: m.source,
-        tags: m.tags,
-        pinned: m.pinned ?? false,
-        createdAt: m.createdAt.toISOString(),
-        userId: m.userId,
-      })),
+      memories: memories.map((m) => {
+        // Compute priority: pinned+confirmed → CRITICAL, confirmed → IMPORTANT, else → INFO
+        const priority: 'CRITICAL' | 'IMPORTANT' | 'INFO' =
+          m.pinned && m.source === 'confirmed' ? 'CRITICAL'
+          : m.source === 'confirmed' ? 'IMPORTANT'
+          : 'INFO';
+
+        return {
+          id: m.id,
+          content: m.content,
+          source: m.source,
+          tags: m.tags,
+          pinned: m.pinned ?? false,
+          createdAt: m.createdAt.toISOString(),
+          userId: m.userId,
+          lastRetrievedAt: m.lastRetrievedAt ? m.lastRetrievedAt.toISOString() : undefined,
+          retrievalCount: m.retrievalCount ?? 0,
+          priority,
+        };
+      }),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

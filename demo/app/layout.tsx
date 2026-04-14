@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Vitamem Demo",
   description:
-    "Interactive demo for Vitamem — memory for AI health companions.",
+    "Interactive demo for Vitamem — long-term memory for AI that works the way human memory does.",
 };
 
 export default function RootLayout({

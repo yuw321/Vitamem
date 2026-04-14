@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 // ---------------------------------------------------------------------------
@@ -11,7 +11,15 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  memories?: Array<{ content: string; source: string; score: number; tags?: string[] }>;
+  memories?: Array<{
+    content: string;
+    source: string;
+    score: number;
+    tags?: string[];
+    priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO';
+    createdAt?: string;
+  }>;
+  formattedContext?: string;
   redirected?: boolean;
   previousThreadId?: string;
   isStreaming?: boolean;
@@ -67,11 +75,27 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true);
 
-  // Auto-scroll to bottom on new messages
+  // Track whether user is near the bottom of the scroll container
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    shouldAutoScroll.current = distanceFromBottom <= 100;
+  }, []);
+
+  // Derive a content fingerprint so streaming updates also trigger scroll
+  const lastMsg = messages[messages.length - 1];
+  const scrollTrigger = `${messages.length}|${lastMsg?.content.length ?? 0}|${lastMsg?.isStreaming ?? false}|${isLoading}`;
+
+  // Auto-scroll to bottom when messages change or streaming content grows
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading, scenarioComplete]);
+    const el = containerRef.current;
+    if (shouldAutoScroll.current && el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [scrollTrigger]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,7 +146,8 @@ export default function ChatPanel({
       {/* Messages */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4 min-h-[300px] max-h-[65vh]"
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 flex flex-col gap-4 min-h-0"
       >
         {messages.length === 0 && !isLoading && (
           <div className="flex-1 flex items-center justify-center text-sm text-[var(--silver)] text-center py-12">
@@ -324,8 +349,64 @@ function ScenarioTransitionCard({
 // Message bubble sub-component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Priority badge helper
+// ---------------------------------------------------------------------------
+
+const PRIORITY_STYLES: Record<string, string> = {
+  CRITICAL: "text-[#ef4444] bg-[rgba(239,68,68,0.12)]",
+  IMPORTANT: "text-[#f59e0b] bg-[rgba(245,158,11,0.12)]",
+  INFO: "text-[var(--silver)] bg-[rgba(148,163,184,0.1)]",
+};
+
+function PriorityBadge({ priority }: { priority?: string }) {
+  if (!priority) return null;
+  const style = PRIORITY_STYLES[priority] ?? PRIORITY_STYLES.INFO;
+  return (
+    <span className={`font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-[10px] ${style}`}>
+      {priority}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Group memories by month/year for chronological display
+// ---------------------------------------------------------------------------
+
+function groupMemoriesByMonth(
+  memories: NonNullable<ChatMessage["memories"]>
+): { label: string | null; items: typeof memories }[] {
+  // Sort ascending by createdAt
+  const sorted = [...memories].sort((a, b) => {
+    if (!a.createdAt || !b.createdAt) return 0;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  // Build month groups
+  const groups = new Map<string, typeof memories>();
+  for (const mem of sorted) {
+    const key = mem.createdAt
+      ? new Date(mem.createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : "Unknown";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(mem);
+  }
+
+  const entries = Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
+  // If only one group, suppress the header
+  if (entries.length <= 1) {
+    return [{ label: null, items: sorted }];
+  }
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Message bubble sub-component
+// ---------------------------------------------------------------------------
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const [showMemories, setShowMemories] = useState(false);
+  const [showContext, setShowContext] = useState(false);
   const isUser = message.role === "user";
 
   // Session divider
@@ -394,38 +475,65 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             </button>
             {showMemories && (
               <div className="mt-2 flex flex-col gap-1.5 animate-fade-in">
-                {message.memories.map((mem, i) => (
-                  <div
-                    key={i}
-                    className="text-[11px] px-3 py-2 bg-[rgba(255,255,255,0.02)] border border-[var(--border)] rounded-lg"
-                  >
-                    <div className="text-[var(--snow)] leading-relaxed">
-                      {mem.content}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="font-bold text-[var(--teal-lt)] bg-[var(--teal-glow)] px-1.5 py-0.5 rounded">
-                        {mem.score.toFixed(2)}
-                      </span>
-                      <span
-                        className={`font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                          mem.source === "confirmed"
-                            ? "text-[#22c55e] bg-[rgba(34,197,94,0.1)]"
-                            : "text-[#f59e0b] bg-[rgba(245,158,11,0.1)]"
-                        }`}
+                {groupMemoriesByMonth(message.memories).map((group, gi) => (
+                  <div key={gi}>
+                    {group.label && (
+                      <div className="text-[10px] font-bold text-[var(--silver)] uppercase tracking-wider px-1 pt-2 pb-1">
+                        {group.label}
+                      </div>
+                    )}
+                    {group.items.map((mem, i) => (
+                      <div
+                        key={`${gi}-${i}`}
+                        className="text-[11px] px-3 py-2 bg-[rgba(255,255,255,0.02)] border border-[var(--border)] rounded-lg mb-1.5 last:mb-0"
                       >
-                        {mem.source}
-                      </span>
-                      {mem.tags?.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-[var(--silver)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
+                        <div className="text-[var(--snow)] leading-relaxed">
+                          {mem.content}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="font-bold text-[var(--teal-lt)] bg-[var(--teal-glow)] px-1.5 py-0.5 rounded">
+                            {mem.score.toFixed(2)}
+                          </span>
+                          <span
+                            className={`font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                              mem.source === "confirmed"
+                                ? "text-[#22c55e] bg-[rgba(34,197,94,0.1)]"
+                                : "text-[#f59e0b] bg-[rgba(245,158,11,0.1)]"
+                            }`}
+                          >
+                            {mem.source}
+                          </span>
+                          <PriorityBadge priority={mem.priority} />
+                          {mem.tags?.map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[var(--silver)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
+
+                {/* Context preview toggle */}
+                {message.formattedContext && (
+                  <div className="mt-1">
+                    <button
+                      onClick={() => setShowContext(!showContext)}
+                      className="text-[10px] text-[var(--silver)] hover:text-[var(--teal-lt)] transition-colors"
+                    >
+                      {showContext ? "▾ Hide LLM Context" : "▸ View LLM Context"}
+                    </button>
+                    {showContext && (
+                      <pre className="mt-1.5 p-3 text-[10px] leading-relaxed text-[var(--silver)] bg-[rgba(0,0,0,0.3)] border border-[var(--border)] rounded-lg overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words font-mono">
+                        {message.formattedContext}
+                      </pre>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

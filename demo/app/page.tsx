@@ -13,7 +13,9 @@ import MemoryPanel, {
   type SearchResult,
 } from "@/components/MemoryPanel";
 import ConfigSidebar from "@/components/ConfigSidebar";
+import CognitiveMemoryPanel from "@/components/CognitiveMemoryPanel";
 import ProfileCard from "@/components/ProfileCard";
+import ThreadTimeline, { type ThreadTimelineProps } from "@/components/ThreadTimeline";
 import type { ConfigResponse } from "@/lib/types";
 import type { UserProfile } from "vitamem";
 import type { Scenario, ScenarioAction } from "@/lib/scenarios";
@@ -51,6 +53,11 @@ export default function DemoPage() {
 
   // Counters for thread panel
   const [embedCount, setEmbedCount] = useState(0);
+
+  // ── Thread timeline state (Demo 3) ────────────────────────────────────
+  const [timelineThreads, setTimelineThreads] = useState<
+    ThreadTimelineProps["threads"]
+  >([]);
 
   // ── Scenario state ──────────────────────────────────────────────────────
   const [scenarioActive, setScenarioActive] = useState(false);
@@ -132,6 +139,9 @@ export default function DemoPage() {
           tags: m.tags,
           pinned: m.pinned,
           createdAt: m.createdAt,
+          lastRetrievedAt: m.lastRetrievedAt,
+          retrievalCount: m.retrievalCount,
+          priority: m.priority,
         }))
       );
     } catch {
@@ -182,10 +192,14 @@ export default function DemoPage() {
                 source: mem.source,
                 score: mem.score ?? 0,
                 tags: mem.tags,
+                priority: mem.priority,
+                createdAt: mem.createdAt,
               }));
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantId ? { ...m, memories: mapped } : m
+                  m.id === assistantId
+                    ? { ...m, memories: mapped, formattedContext: meta.formattedContext }
+                    : m
                 )
               );
             }
@@ -221,13 +235,22 @@ export default function DemoPage() {
         // Network error fallback — try non-streaming
         try {
           const res = await api.sendMessage(text, currentThread?.id);
+          const fallbackMemories = res.memories?.map((mem) => ({
+            content: mem.content,
+            source: mem.source,
+            score: mem.score ?? 0,
+            tags: mem.tags,
+            priority: mem.priority,
+            createdAt: mem.createdAt,
+          }));
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
                     content: res.reply,
-                    memories: res.memories,
+                    memories: fallbackMemories,
+                    formattedContext: res.formattedContext,
                     redirected: res.redirected,
                     previousThreadId: res.previousThreadId,
                     isStreaming: false,
@@ -272,6 +295,8 @@ export default function DemoPage() {
         deduplicatedCount: result.deduplicatedCount,
         supersededCount: result.memoriesSuperseded,
         savedCount: result.savedCount,
+        reflectionResult: result.reflectionResult,
+        reflectionEnabled: result.reflectionEnabled,
       });
 
       setEmbedCount((prev) => prev + result.embeddingCount);
@@ -280,6 +305,17 @@ export default function DemoPage() {
       setCurrentThread((prev) =>
         prev ? { ...prev, state: result.thread.state } : prev
       );
+
+      // Update timeline for Demo 3
+      if (currentScenarioIdx === 2) {
+        setTimelineThreads((prev) =>
+          prev.map((t) =>
+            t.id === currentThread.id
+              ? { ...t, state: result.thread.state as any }
+              : t
+          )
+        );
+      }
 
       // Refresh data
       await Promise.all([refreshMemories(), refreshThreads(), refreshProfile()]);
@@ -315,6 +351,18 @@ export default function DemoPage() {
       setPipelineVisible(false);
       setPipeline(null);
 
+      // Update timeline for Demo 3 — add the new thread
+      if (currentScenarioIdx === 2) {
+        setTimelineThreads((prev) => [
+          ...prev,
+          {
+            id: thread.id,
+            state: (thread.state as any) ?? "active",
+            label: `Thread ${prev.length + 1}`,
+          },
+        ]);
+      }
+
       await refreshThreads();
     } catch (err) {
       console.error("Failed to create thread:", err);
@@ -328,6 +376,18 @@ export default function DemoPage() {
     setIsLoading(true);
     try {
       await api.sweepThreads();
+      // Update timeline for Demo 3 — refresh states from server
+      if (currentScenarioIdx === 2) {
+        try {
+          const { threads: list } = await api.listThreads();
+          setTimelineThreads((prev) =>
+            prev.map((t) => {
+              const found = list.find((s) => s.id === t.id);
+              return found ? { ...t, state: found.state as any } : t;
+            })
+          );
+        } catch { /* non-critical */ }
+      }
       await refreshThreads();
     } catch (err) {
       console.error("Sweep failed:", err);
@@ -419,7 +479,17 @@ export default function DemoPage() {
     setMessages([]);
     setPipelineVisible(false);
     setPipeline(null);
-  }, []);
+    // Initialize timeline for Demo 3
+    if (scenario.id === "thread-lifecycle") {
+      setTimelineThreads(
+        currentThread
+          ? [{ id: currentThread.id, state: currentThread.state as any, label: "Thread 1" }]
+          : []
+      );
+    } else {
+      setTimelineThreads([]);
+    }
+  }, [currentThread]);
 
   const handleSkipScenario = useCallback(() => {
     setScenarioActive(false);
@@ -586,6 +656,7 @@ export default function DemoPage() {
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_340px] gap-4 items-start">
           {/* Left column: Chat */}
+          <div className="max-h-[calc(100vh-120px)] flex flex-col min-h-[500px]">
           <ChatPanel
             messages={messages}
             isLoading={isLoading}
@@ -607,9 +678,14 @@ export default function DemoPage() {
             scenarioStepIndex={scenarioIndex}
             scenarioTotalSteps={scenarioSteps.length}
           />
+          </div>
 
           {/* Right column */}
           <div className="flex flex-col gap-3">
+            {currentScenarioIdx === 2 && (
+              <ThreadTimeline threads={timelineThreads} />
+            )}
+
             <ThreadPanel
               currentThread={currentThread}
               threads={threads}
@@ -626,6 +702,11 @@ export default function DemoPage() {
             <PipelineViz pipeline={pipeline} visible={pipelineVisible} />
 
             <ProfileCard profile={profile} />
+
+            <CognitiveMemoryPanel
+              config={config}
+              onConfigChange={(updated) => setConfig(updated)}
+            />
 
             <MemoryPanel
               memories={memories}

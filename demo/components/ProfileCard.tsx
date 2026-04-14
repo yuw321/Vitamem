@@ -33,14 +33,14 @@ export default function ProfileCard({ profile }: ProfileCardProps) {
           />
         </svg>
         <span className="text-xs font-bold uppercase tracking-wider text-[var(--silver)]">
-          Patient Profile
+          User Profile
         </span>
       </div>
 
       <div className="px-4 py-3">
         {isEmpty ? (
           <p className="text-[12px] text-[var(--silver)] leading-relaxed">
-            No profile data yet — complete Demo 1 to build the patient&apos;s profile.
+            No profile data yet — complete Demo 1 to build the user&apos;s profile.
           </p>
         ) : (
           <div className="space-y-3">
@@ -87,31 +87,44 @@ export default function ProfileCard({ profile }: ProfileCardProps) {
             )}
 
             {/* Vitals */}
-            {Object.keys(profile!.vitals).length > 0 && (
+            {profile!.vitals && Object.keys(profile!.vitals).length > 0 ? (
               <Section label="Vitals">
                 <div className="space-y-1">
-                  {Object.entries(profile!.vitals).map(([key, v]) => (
-                    <div
-                      key={key}
-                      className="flex items-baseline gap-1.5 text-[12px]"
-                    >
-                      <span className="text-[var(--silver)] uppercase tracking-wide text-[10px] min-w-[48px]">
-                        {key.replace(/_/g, " ")}
-                      </span>
-                      <span className="text-[var(--snow)] font-medium">
-                        {v.value}
-                        {v.unit ? v.unit : ""}
-                      </span>
-                      {v.previousValue != null && (
-                        <span className="text-[var(--silver)] text-[11px]">
-                          {v.value < v.previousValue ? "↓" : v.value > v.previousValue ? "↑" : "="}{" "}
-                          from {v.previousValue}
-                          {v.unit ?? ""}
+                  {Object.entries(profile!.vitals).map(([key, record]) => {
+                    if (!record) return null;
+                    const displayKey = key
+                      .split("_")
+                      .map((w) =>
+                        w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)
+                      )
+                      .join(" ");
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-baseline gap-1.5 text-[12px]"
+                      >
+                        <span className="text-[var(--silver)] uppercase tracking-wide text-[10px] min-w-[48px]">
+                          {displayKey}
                         </span>
-                      )}
-                    </div>
-                  ))}
+                        <span className="text-[var(--snow)] font-medium">
+                          {record.value}
+                          {record.unit ?? ""}
+                        </span>
+                        {record.previousValue != null && (
+                          <span className="text-[var(--silver)] text-[11px]">
+                            {record.value < record.previousValue ? "↓" : record.value > record.previousValue ? "↑" : "="}{" "}
+                            from {record.previousValue}
+                            {record.unit ?? ""}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+              </Section>
+            ) : (
+              <Section label="Vitals">
+                <p className="text-[12px] text-[var(--silver)]">No vitals recorded</p>
               </Section>
             )}
 

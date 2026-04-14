@@ -24,7 +24,10 @@ export interface ChatResponse {
     source: string;
     score: number;
     tags?: string[];
+    priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO';
+    createdAt?: string;
   }>;
+  formattedContext?: string;
   redirected?: boolean;
   previousThreadId?: string;
 }
@@ -34,7 +37,7 @@ export interface ChatResponse {
 // ---------------------------------------------------------------------------
 
 export type SSEEvent =
-  | { type: "meta"; thread: { id: string; state: string }; memories?: Array<{ content: string; source: string; score?: number; tags?: string[] }>; redirected?: boolean; previousThreadId?: string }
+  | { type: "meta"; thread: { id: string; state: string }; memories?: Array<{ content: string; source: string; score?: number; tags?: string[]; priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO'; createdAt?: string }>; formattedContext?: string; redirected?: boolean; previousThreadId?: string }
   | { type: "delta"; chunk: string }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -64,6 +67,9 @@ export interface MemoryResponse {
     pinned?: boolean;
     tags?: string[];
     createdAt: string;
+    lastRetrievedAt?: string;
+    retrievalCount?: number;
+    priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO';
   }>;
 }
 
@@ -92,6 +98,12 @@ export interface PipelineResponse {
   success: boolean;
   threadId: string;
   state: string;
+  reflectionResult?: {
+    correctionsCount: number;
+    missedFactsCount: number;
+    conflictsCount: number;
+  };
+  reflectionEnabled?: boolean;
 }
 
 /** GET /api/config */
@@ -106,4 +118,9 @@ export interface ConfigResponse {
   dormantTimeoutMs: number | null;
   closedTimeoutMs: number | null;
   demoUserId: string;
+  enableReflection?: boolean;
+  forgetting?: { forgettingHalfLifeMs: number; minRetrievalScore: number };
+  prioritySignaling?: boolean;
+  chronologicalRetrieval?: boolean;
+  cacheableContext?: boolean;
 }

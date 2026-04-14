@@ -1,6 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVitamem, getDemoUserId } from "@/lib/vitamem-instance";
 import type { ChatRequest, ChatResponse } from "@/lib/types";
+import type { MemoryMatch } from "vitamem";
+
+/** Compute priority marker for a memory match. */
+function computePriority(m: MemoryMatch): 'CRITICAL' | 'IMPORTANT' | 'INFO' {
+  if (m.pinned && m.source === 'confirmed') return 'CRITICAL';
+  if (m.source === 'confirmed') return 'IMPORTANT';
+  return 'INFO';
+}
+
+/** Build a formatted context string from memory matches (mirrors what gets injected into LLM). */
+function buildFormattedContext(memories: MemoryMatch[] | undefined): string | undefined {
+  if (!memories || memories.length === 0) return undefined;
+
+  const lines = memories.map((m) => {
+    const marker = computePriority(m);
+    const source = m.pinned ? '(confirmed, pinned)' : `(${m.source})`;
+    const date = m.createdAt
+      ? ` (mentioned ${(m.createdAt instanceof Date ? m.createdAt : new Date(String(m.createdAt))).toISOString().split('T')[0]})`
+      : '';
+    return `- [${marker}] ${m.content}${date} ${source}`;
+  });
+  return lines.join('\n');
+}
+/** Map memory matches to the API response shape with priority and createdAt. */
+function mapMemories(memories: MemoryMatch[] | undefined) {
+  return memories?.map((m) => ({
+    content: m.content,
+    source: m.source,
+    score: m.score,
+    tags: m.tags,
+    priority: computePriority(m),
+    createdAt: m.createdAt ? (m.createdAt instanceof Date ? m.createdAt.toISOString() : String(m.createdAt)) : undefined,
+  }));
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,12 +86,8 @@ export async function POST(request: NextRequest) {
                 `data: ${JSON.stringify({
                   type: "meta",
                   thread: { id: thread.id, state: thread.state },
-                  memories: memories?.map((m) => ({
-                    content: m.content,
-                    source: m.source,
-                    score: m.score,
-                    tags: m.tags,
-                  })),
+                  memories: mapMemories(memories),
+                  formattedContext: buildFormattedContext(memories),
                   redirected,
                   previousThreadId,
                 })}\n\n`,
@@ -112,12 +142,8 @@ export async function POST(request: NextRequest) {
         id: result.thread.id,
         state: result.thread.state,
       },
-      memories: result.memories?.map((m) => ({
-        content: m.content,
-        source: m.source,
-        score: m.score,
-        tags: m.tags,
-      })),
+      memories: mapMemories(result.memories),
+      formattedContext: buildFormattedContext(result.memories),
       redirected: result.redirected,
       previousThreadId: result.previousThreadId,
     };

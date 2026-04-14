@@ -9,6 +9,9 @@ import {
 } from "vitamem";
 import type { Vitamem, VitamemConfig, PresetName, ProviderName, StorageAdapter } from "vitamem";
 
+// Store the current config so we can patch and recreate
+let currentConfig: VitamemConfig;
+
 // ---------------------------------------------------------------------------
 // Singleton – attached to globalThis to survive Next.js dev-mode hot-reloads
 // ---------------------------------------------------------------------------
@@ -113,8 +116,16 @@ function buildConfig(): VitamemConfig {
       ? Number(process.env.SUPERSEDE_THRESHOLD)
       : undefined,
     structuredExtractionRules: HEALTH_STRUCTURED_RULES,
+
+    // Phase 1 features
+    enableReflection: true,
+    forgetting: { forgettingHalfLifeMs: 180 * 86400000, minRetrievalScore: 0.1 },
+    prioritySignaling: true,
+    chronologicalRetrieval: true,
+    cacheableContext: true,
   };
 
+  currentConfig = config;
   return config;
 }
 
@@ -172,5 +183,37 @@ export function getConfig() {
       ? Number(process.env.CLOSED_TIMEOUT_MS)
       : null,
     demoUserId: getDemoUserId(),
+    // Phase 1 feature flags
+    enableReflection: currentConfig?.enableReflection ?? true,
+    forgetting: currentConfig?.forgetting ?? { forgettingHalfLifeMs: 180 * 86400000, minRetrievalScore: 0.1 },
+    prioritySignaling: currentConfig?.prioritySignaling ?? true,
+    chronologicalRetrieval: currentConfig?.chronologicalRetrieval ?? true,
+    cacheableContext: currentConfig?.cacheableContext ?? true,
   };
+}
+
+/**
+ * Patches the current Vitamem config and recreates the singleton instance.
+ * Used by ConfigSidebar to apply runtime configuration changes.
+ */
+export async function updateVitamemConfig(updates: Partial<VitamemConfig>): Promise<Vitamem> {
+  // Ensure we have a base config
+  if (!currentConfig) {
+    currentConfig = buildConfig();
+  }
+
+  // Merge updates into existing config without replacing storage
+  const mergedConfig: VitamemConfig = {
+    ...currentConfig,
+    ...updates,
+    storage: globalForVitamem.vitamemStorage ?? currentConfig.storage,
+  };
+
+  currentConfig = mergedConfig;
+
+  const instance = await createVitamem(mergedConfig);
+  globalForVitamem.vitamemInstance = instance;
+  globalForVitamem.vitamemPromise = Promise.resolve(instance);
+
+  return instance;
 }

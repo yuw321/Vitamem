@@ -24,7 +24,8 @@ export async function sendMessageStream(
   callbacks?: {
     onMeta?: (meta: {
       thread: { id: string; state: string };
-      memories?: Array<{ content: string; source: string; score?: number; tags?: string[] }>;
+      memories?: Array<{ content: string; source: string; score?: number; tags?: string[]; priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO'; createdAt?: string }>;
+      formattedContext?: string;
       redirected?: boolean;
       previousThreadId?: string;
     }) => void;
@@ -116,6 +117,8 @@ export async function triggerDormant(threadId: string): Promise<{
   savedCount: number;
   memoriesSuperseded: number;
   profileFieldsUpdated: number;
+  reflectionResult?: { correctionsCount: number; missedFactsCount: number; conflictsCount: number };
+  reflectionEnabled?: boolean;
   thread: { id: string; state: string };
 }> {
   const res = await fetch("/api/thread", {
@@ -151,6 +154,9 @@ export async function listMemories(): Promise<{
     tags?: string[];
     pinned?: boolean;
     createdAt: string;
+    lastRetrievedAt?: string;
+    retrievalCount?: number;
+    priority?: 'CRITICAL' | 'IMPORTANT' | 'INFO';
   }>;
 }> {
   const res = await fetch("/api/memory");

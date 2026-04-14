@@ -106,6 +106,15 @@ export async function PATCH(request: NextRequest) {
 
       const thread = await vm.getThread(threadId);
 
+      // Surface reflection metadata if reflection ran
+      const reflectionResult = (pipelineResult as any).reflection
+        ? {
+            correctionsCount: (pipelineResult as any).reflection.factsModified ?? 0,
+            missedFactsCount: (pipelineResult as any).reflection.missedFactsAdded ?? 0,
+            conflictsCount: (pipelineResult as any).reflection.conflictsFound ?? 0,
+          }
+        : undefined;
+
       return NextResponse.json({
         extractedFacts: pipelineResult.totalExtracted,
         embeddingCount: pipelineResult.totalExtracted,
@@ -113,6 +122,8 @@ export async function PATCH(request: NextRequest) {
         savedCount: pipelineResult.memoriesSaved,
         memoriesSuperseded: pipelineResult.memoriesSuperseded,
         profileFieldsUpdated: pipelineResult.profileFieldsUpdated ?? 0,
+        reflectionResult,
+        reflectionEnabled: !!reflectionResult,
         thread: thread
           ? { id: thread.id, state: thread.state }
           : { id: threadId, state: "dormant" },

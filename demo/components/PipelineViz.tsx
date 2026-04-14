@@ -21,7 +21,7 @@ export default function PipelineViz({ pipeline, visible }: PipelineVizProps) {
   if (!visible || !pipeline) return null;
 
   return (
-    <div className="bg-[var(--slate)] border border-[var(--border)] rounded-xl overflow-hidden animate-fade-in">
+    <div id="pipeline-viz" className="bg-[var(--slate)] border border-[var(--border)] rounded-xl overflow-hidden animate-fade-in">
       <div className="px-4 py-3 border-b border-[var(--border)]">
         <span className="text-xs font-bold uppercase tracking-wider text-[var(--silver)]">
           Extraction Pipeline
@@ -88,65 +88,95 @@ function PipelineStep({
 // Pipeline animation helper — call from page.tsx
 // ---------------------------------------------------------------------------
 
-export function createPipelineSteps(data?: {
+export interface PipelineData {
   extractedFacts: number;
   profileFieldsUpdated: number;
   embeddingCount: number;
   deduplicatedCount: number;
   supersededCount: number;
   savedCount: number;
-}): PipelineState {
-  return {
-    currentStep: -1,
-    steps: [
-      {
-        name: "LLM extraction",
-        description: "1 API call · full conversation",
-        status: "pending",
-        data: data
-          ? `${data.extractedFacts} facts extracted`
-          : undefined,
-      },
-      {
-        name: "Profile updated",
-        description: "structured field classification",
-        status: "pending",
-        data: data
-          ? `${data.profileFieldsUpdated} fields updated`
-          : undefined,
-      },
-      {
-        name: "Embedding facts",
-        description: "N embedding calls",
-        status: "pending",
-        data: data
-          ? `${data.embeddingCount} embedding calls`
-          : undefined,
-      },
-      {
-        name: "Deduplication",
-        description: "cosine ≥ 0.92",
-        status: "pending",
-        data: data
-          ? `${data.deduplicatedCount} duplicates filtered`
-          : undefined,
-      },
-      {
-        name: "Memories updated",
-        description: "supersede stale facts",
-        status: "pending",
-        data: data
-          ? `${data.supersededCount} memories superseded`
-          : undefined,
-      },
-      {
-        name: "Saved to storage",
-        description: "N memories stored",
-        status: "pending",
-        data: data ? `${data.savedCount} memories saved` : undefined,
-      },
-    ],
+  reflectionResult?: {
+    correctionsCount: number;
+    missedFactsCount: number;
+    conflictsCount: number;
   };
+  reflectionEnabled?: boolean;
+}
+
+function reflectionDataString(r: NonNullable<PipelineData["reflectionResult"]>): string {
+  const total = r.correctionsCount + r.missedFactsCount + r.conflictsCount;
+  const parts: string[] = [];
+  if (r.correctionsCount > 0) parts.push(`${r.correctionsCount} correction${r.correctionsCount !== 1 ? "s" : ""}`);
+  if (r.missedFactsCount > 0) parts.push(`${r.missedFactsCount} enrichment${r.missedFactsCount !== 1 ? "s" : ""}`);
+  if (r.conflictsCount > 0) parts.push(`${r.conflictsCount} conflict${r.conflictsCount !== 1 ? "s" : ""}`);
+  if (parts.length === 0) return `Validated — 0 corrections`;
+  return `Found ${parts.join(", ")}`;
+}
+
+export function createPipelineSteps(data?: PipelineData): PipelineState {
+  const steps: PipelineState["steps"] = [
+    {
+      name: "LLM extraction",
+      description: "1 API call · full conversation",
+      status: "pending",
+      data: data
+        ? `${data.extractedFacts} facts extracted`
+        : undefined,
+    },
+  ];
+
+  // Conditionally insert the reflection step when enabled
+  if (data?.reflectionEnabled && data.reflectionResult) {
+    steps.push({
+      name: "Reflection validation",
+      description: "Second LLM pass validates accuracy and catches missed facts",
+      status: "pending",
+      data: reflectionDataString(data.reflectionResult),
+    });
+  }
+
+  steps.push(
+    {
+      name: "Profile updated",
+      description: "structured field classification",
+      status: "pending",
+      data: data
+        ? `${data.profileFieldsUpdated} fields updated`
+        : undefined,
+    },
+    {
+      name: "Embedding facts",
+      description: "N embedding calls",
+      status: "pending",
+      data: data
+        ? `${data.embeddingCount} embedding calls`
+        : undefined,
+    },
+    {
+      name: "Deduplication",
+      description: "cosine ≥ 0.92",
+      status: "pending",
+      data: data
+        ? `${data.deduplicatedCount} duplicates filtered`
+        : undefined,
+    },
+    {
+      name: "Memories updated",
+      description: "supersede stale facts",
+      status: "pending",
+      data: data
+        ? `${data.supersededCount} memories superseded`
+        : undefined,
+    },
+    {
+      name: "Saved to storage",
+      description: "N memories stored",
+      status: "pending",
+      data: data ? `${data.savedCount} memories saved` : undefined,
+    },
+  );
+
+  return { currentStep: -1, steps };
 }
 
 /**
@@ -155,16 +185,15 @@ export function createPipelineSteps(data?: {
  */
 export function animatePipeline(
   setPipeline: React.Dispatch<React.SetStateAction<PipelineState | null>>,
-  data?: {
-    extractedFacts: number;
-    profileFieldsUpdated: number;
-    embeddingCount: number;
-    deduplicatedCount: number;
-    supersededCount: number;
-    savedCount: number;
-  }
+  data?: PipelineData
 ): Promise<void> {
-  const delays = [800, 500, 1200, 700, 500, 600];
+  // Base delays for the 6 original steps
+  const baseDelays = [800, 500, 1200, 700, 500, 600];
+  // When reflection is enabled, insert a delay for the reflection step after LLM extraction
+  const delays =
+    data?.reflectionEnabled && data.reflectionResult
+      ? [baseDelays[0], 900, ...baseDelays.slice(1)]
+      : baseDelays;
 
   return new Promise<void>((resolve) => {
     const pipeline = createPipelineSteps(data);

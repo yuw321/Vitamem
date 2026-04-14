@@ -102,7 +102,7 @@ describe('Vitamem Demo Integration Tests', () => {
   // -------------------------------------------------------------------------
   describe('Scenario 1: Health Companion Check-in', () => {
     it('should complete a full two-session check-in flow', async () => {
-      // Session 1: patient check-in
+      // Session 1: user check-in
       const thread1 = await mem.createThread({ userId });
       expect(thread1.state).toBe('active');
 

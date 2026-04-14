@@ -40,20 +40,20 @@ const firstVisit: Scenario = {
   id: "first-visit",
   name: "First Visit",
   description:
-    "The patient's first appointment — watch how Vitamem captures their health story through chat, extracts structured memories, and auto-pins critical safety information.",
+    "The user's first session — watch how Vitamem captures their story through chat, extracts structured memories, and auto-pins critical safety information.",
   estimatedTime: "~3 minutes",
   features: ["chat", "extraction", "source classification", "auto-pin"],
   steps: [
     {
       type: "pause",
       message:
-        "Meet your patient. They're visiting for the first time — let's see how Vitamem captures their health story.",
+        "Meet your user. They're visiting for the first time — let's see how Vitamem captures their story."
     },
     {
       type: "sendMessage",
       message:
         "Hi! I've been managing Type 2 diabetes for about 3 years now. I take metformin 1000mg twice a day.",
-      description: "Patient introduces their condition and medication.",
+      description: "User introduces their condition and medication."
     },
     {
       type: "waitForReply",
@@ -63,7 +63,7 @@ const firstVisit: Scenario = {
       type: "sendMessage",
       message:
         "I'm also allergic to penicillin — found out the hard way last year. My last A1C was 7.4% and my doctor wants me under 7.0.",
-      description: "Patient shares allergy and lab results.",
+      description: "User shares allergy and lab results."
     },
     {
       type: "waitForReply",
@@ -73,7 +73,7 @@ const firstVisit: Scenario = {
       type: "sendMessage",
       message:
         "I exercise Monday, Wednesday, Friday and I've been cutting carbs to help get that number down.",
-      description: "Patient shares lifestyle and goals.",
+      description: "User shares lifestyle and goals."
     },
     {
       type: "waitForReply",
@@ -91,9 +91,15 @@ const firstVisit: Scenario = {
     },
     {
       type: "highlight",
+      element: "pipeline-viz",
+      message:
+        "Notice the pipeline included a 'Reflection' step — Vitamem ran a second validation pass on what it extracted. This catches contradictions and verifies fact quality before anything is saved.",
+    },
+    {
+      type: "highlight",
       element: "memory-panel",
       message:
-        "Vitamem extracted the key facts from the conversation. Notice the pin icons — the allergy and medication dosage were auto-pinned as safety-critical. The source badges show 'confirmed' for things the patient stated directly.",
+        "Vitamem extracted the key facts from the conversation. The pin icons show the allergy and medication dosage were auto-pinned as safety-critical, and the source badges show 'confirmed' for things the user stated directly. Notice the colored priority badges (CRITICAL, IMPORTANT, INFO) — the allergy and dosage were flagged CRITICAL. Each fact also includes a date chip showing when it was learned.",
     },
   ],
 };
@@ -106,7 +112,7 @@ const theFollowup: Scenario = {
   id: "the-followup",
   name: "The Follow-up",
   description:
-    "The patient returns for a follow-up visit. Watch how Vitamem automatically retrieves memories from the first visit and updates the A1C value in-place when it changes.",
+    "The user returns for a follow-up visit. Watch how Vitamem automatically retrieves memories from the first visit and updates the A1C value in-place when it changes.",
   estimatedTime: "~3 minutes",
   features: [
     "autoRetrieve",
@@ -118,7 +124,7 @@ const theFollowup: Scenario = {
     {
       type: "pause",
       message:
-        "The patient returns for a follow-up. Vitamem still has their memories from the first visit — watch how the AI uses them.",
+        "The user returns for a follow-up. Vitamem still has their memories from the first visit — watch how the AI uses them."
     },
     {
       type: "newSession",
@@ -127,7 +133,7 @@ const theFollowup: Scenario = {
     {
       type: "sendMessage",
       message: "Hey, I'm back! Had my checkup yesterday.",
-      description: "Patient returns for follow-up.",
+      description: "User returns for follow-up."
     },
     {
       type: "waitForReply",
@@ -137,13 +143,13 @@ const theFollowup: Scenario = {
     {
       type: "pause",
       message:
-        "See the 'Memories used' section under the AI's reply? Expand it. Those are memories from Demo 1 that Vitamem automatically retrieved — it embedded your message, searched for similar memories using vector similarity, and injected them into the AI's context. The scores show how relevant each memory was. The AI didn't 'remember' anything — it was given these facts as context.",
+        "See the 'Memories used' section under the AI's reply? Expand it. Those are memories from Demo 1 that Vitamem automatically retrieved — it embedded your message, searched for similar memories using vector similarity, and injected them into the AI's context. The scores show how relevant each memory was. Notice the CRITICAL and IMPORTANT markers telling the AI which facts matter most, and how memories are grouped chronologically by when they were learned.",
     },
     {
       type: "sendMessage",
       message:
         "Great news — my A1C came back at 6.8%! Down from 7.4! The diet and exercise changes are really paying off.",
-      description: "Patient reports improved A1C.",
+      description: "User reports improved A1C."
     },
     {
       type: "waitForReply",
@@ -153,7 +159,7 @@ const theFollowup: Scenario = {
     {
       type: "pause",
       message:
-        "The AI mentioned the previous A1C of 7.4% — that came directly from the retrieved memories. Expand 'Memories used' again to see which memories were pulled in. Without autoRetrieve, the AI would have no idea about the patient's history. Now let's end this session and watch what happens to the A1C memory in the panel.",
+        "The AI mentioned the previous A1C of 7.4% — that came directly from the retrieved memories. Expand 'Memories used' again to see which memories were pulled in. Without autoRetrieve, the AI would have no idea about the user's history. Now let's end this session and watch what happens to the A1C memory in the panel.",
     },
     {
       type: "endSession",
@@ -189,13 +195,13 @@ const threadLifecycle: Scenario = {
     {
       type: "pause",
       message:
-        "Your patient's data is safe in memory. Now let's look at how Vitamem manages conversation threads over time.",
+        "Your user's data is safe in memory. Now let's look at how Vitamem manages conversation threads over time."
     },
     {
       type: "sendMessage",
       message:
         "Quick question — should I take my metformin with food or on an empty stomach?",
-      description: "Patient asks a quick question.",
+      description: "User asks a quick question."
     },
     {
       type: "waitForReply",
@@ -209,13 +215,13 @@ const threadLifecycle: Scenario = {
     {
       type: "pause",
       message:
-        "The thread is now dormant and memories have been extracted. What happens if the patient comes back to this same thread?",
+        "Watch the timeline on the right — the thread has transitioned from Active to Dormant and memories have been extracted. What happens if the user comes back to this same thread?",
     },
     {
       type: "sendMessage",
       message: "Oh wait, one more thing about my medication...",
       description:
-        "Patient tries to continue on the dormant thread.",
+        "User tries to continue on the dormant thread."
     },
     {
       type: "waitForReply",
@@ -225,7 +231,7 @@ const threadLifecycle: Scenario = {
     {
       type: "pause",
       message:
-        "Vitamem detected the dormant thread and automatically created a new one. The patient's message was preserved — no data lost. Look at the thread list to see both threads.",
+        "Vitamem detected the dormant thread and automatically created a new one. The timeline now shows two threads — the original dormant one and a fresh Active thread below it. The user's message was preserved — no data lost.",
     },
     {
       type: "sweepThreads",
@@ -235,7 +241,69 @@ const threadLifecycle: Scenario = {
     {
       type: "pause",
       message:
-        "sweepThreads processes all threads based on timeout settings. In production, you'd run this on a schedule (cron job or setInterval). Threads transition: Active → Cooling → Dormant → Closed.",
+        "The timeline shows both threads processed — the old thread is now Closed while the new thread remains Active. In production, you'd run sweepThreads on a schedule (cron job or setInterval). Threads transition: Active → Cooling → Dormant → Closed.",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Demo 4 — Memory Quality
+// ---------------------------------------------------------------------------
+
+const memoryQuality: Scenario = {
+  id: "memory-quality",
+  name: "Memory Quality",
+  description:
+    "See how Vitamem validates and maintains memory quality — catching contradictions through reflection and showing how memory relevance naturally decays over time.",
+  estimatedTime: "~2 minutes",
+  features: ["reflection", "contradiction detection", "active forgetting", "decay"],
+  steps: [
+    {
+      type: "pause",
+      message:
+        "You've seen Vitamem capture, recall, and manage memories. Now let's see how it maintains quality over time — like human memory, it validates what it learns and lets irrelevant details fade.",
+    },
+    {
+      type: "newSession",
+      description: "Starting a new session to demonstrate memory quality.",
+    },
+    {
+      type: "sendMessage",
+      message:
+        "Actually, I need to correct something — I've been taking metformin 500mg, not 1000mg. My pharmacist noticed the mix-up last week and fixed the dosage.",
+      description: "User corrects a previous memory — triggers contradiction detection.",
+    },
+    {
+      type: "waitForReply",
+      description: "AI acknowledges the dosage correction.",
+    },
+    {
+      type: "endSession",
+      description:
+        "Triggering extraction with reflection — watch for the contradiction detection.",
+    },
+    {
+      type: "highlight",
+      element: "pipeline-viz",
+      message:
+        "Watch the 'Reflection validation' step in the pipeline — Vitamem's second LLM pass detected the contradiction between the new 500mg dosage and the previously stored 1000mg. It corrected the memory automatically.",
+    },
+    {
+      type: "highlight",
+      element: "memory-panel",
+      message:
+        "Check the metformin memory — the dosage now reflects 500mg. Reflection caught the conflict and updated it, no manual intervention needed. Notice the date chip showing when this correction was learned.",
+    },
+    {
+      type: "pause",
+      message:
+        "Now look at the retrieval counts in the memory panel. Some memories show 'Retrieved 3x' while others show 'Never retrieved'. In a real system running over weeks, memories that are never accessed gradually fade in relevance — just like how you forget unused information. Frequently retrieved facts stay strong.",
+    },
+    {
+      type: "highlight",
+      element: "memory-panel",
+      message:
+        "Memories with low retrieval counts score lower in future searches and appear faded. But pinned memories like the penicillin allergy are immune to decay — they stay top priority forever, just like how you never forget a life-threatening allergy. This is active forgetting: Vitamem's version of 'use it or lose it'.",
     },
   ],
 };
@@ -244,7 +312,7 @@ const threadLifecycle: Scenario = {
 // Exports
 // ---------------------------------------------------------------------------
 
-export const SCENARIOS: Scenario[] = [firstVisit, theFollowup, threadLifecycle];
+export const SCENARIOS: Scenario[] = [firstVisit, theFollowup, threadLifecycle, memoryQuality];
 
 export function getDefaultScenario(): Scenario {
   return SCENARIOS[0];
