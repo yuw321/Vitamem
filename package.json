@@ -42,7 +42,7 @@
     "type": "git",
     "url": "https://github.com/yuw321/Vitamem.git"
   },
-  "homepage": "https://vitamem.dev",
+  "homepage": "https://vitamem.vercel.app/",
   "bugs": {
     "url": "https://github.com/yuw321/Vitamem/issues"
   },

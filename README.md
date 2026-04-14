@@ -200,7 +200,7 @@ const mem = await createVitamem({
 
 ## Documentation
 
-Full documentation at **[vitamem.dev](https://vitamem.dev)** — quickstart, API reference, provider guides, tutorials, and more.
+Full documentation at **[vitamem.vercel.app](https://vitamem.vercel.app/)** — quickstart, API reference, provider guides, tutorials, and more.
 
 Documentation is built with [Astro](https://astro.build) + [Starlight](https://starlight.astro.build). To preview locally:
 
@@ -214,7 +214,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome.
 
 ## Disclaimer
 
-Vitamem is a developer library for AI memory management, not a medical device. If you build health-related applications, you are responsible for compliance (HIPAA, GDPR, etc.) and safety disclosures. See [full disclaimer](https://vitamem.dev/legal/disclaimer/).
+Vitamem is a developer library for AI memory management, not a medical device. If you build health-related applications, you are responsible for compliance (HIPAA, GDPR, etc.) and safety disclosures. See [full disclaimer](https://vitamem.vercel.app/legal/disclaimer/).
 
 ## License
 
