@@ -6,6 +6,8 @@
 |---|---|
 | `logo-concept-a.svg` | Primary logo mark. Site header, README (via raw GitHub URL), and marketing. |
 
+Public documentation site: **[vitamem.dev](https://vitamem.dev/)** (deployed via Vercel).
+
 The mark is a continuous thread line passing through three lifecycle state nodes (active, cooling, dormant), ending in a memory spiral. Monochrome-first.
 
 For the npm package README, the image URL must point at GitHub raw content (the published tarball does not include `website/`):

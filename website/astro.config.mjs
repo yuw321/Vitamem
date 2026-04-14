@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://vitamem.vercel.app',
+	site: 'https://vitamem.dev',
 	integrations: [
 		starlight({
 			title: 'Vitamem',
