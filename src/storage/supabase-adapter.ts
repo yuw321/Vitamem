@@ -10,6 +10,7 @@ import {
   createEmptyProfile,
 } from "../types.js";
 import { cosineSimilarity } from "../memory/deduplication.js";
+import { addGoalWithDedup } from "./goal-dedup.js";
 
 export interface SupabaseClient {
   from(table: string): SupabaseQueryBuilder;
@@ -250,6 +251,8 @@ export class SupabaseAdapter implements StorageAdapter {
           pinned: m.pinned,
           tags: m.tags,
           embedding: m.embedding ?? undefined,
+          lastRetrievedAt: m.lastRetrievedAt,
+          retrievalCount: m.retrievalCount,
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
@@ -264,6 +267,8 @@ export class SupabaseAdapter implements StorageAdapter {
       pinned: row.pinned as boolean | undefined,
       tags: row.tags as string[] | undefined,
       embedding: row.embedding as number[] | undefined,
+      lastRetrievedAt: row.last_retrieved_at ? new Date(row.last_retrieved_at as string) : undefined,
+      retrievalCount: row.retrieval_count as number | undefined,
     }));
   }
 
@@ -339,6 +344,8 @@ export class SupabaseAdapter implements StorageAdapter {
       createdAt: new Date(row.created_at as string),
       pinned: row.pinned as boolean | undefined,
       tags: row.tags as string[] | undefined,
+      lastRetrievedAt: row.last_retrieved_at ? new Date(row.last_retrieved_at as string) : undefined,
+      retrievalCount: row.retrieval_count as number | undefined,
     };
   }
 
@@ -382,6 +389,8 @@ export class SupabaseAdapter implements StorageAdapter {
     if (updates.content !== undefined) data.content = updates.content;
     if (updates.source !== undefined) data.source = updates.source;
     if (updates.embedding !== undefined) data.embedding = updates.embedding;
+    if (updates.lastRetrievedAt !== undefined) data.last_retrieved_at = updates.lastRetrievedAt instanceof Date ? updates.lastRetrievedAt.toISOString() : updates.lastRetrievedAt;
+    if (updates.retrievalCount !== undefined) data.retrieval_count = updates.retrievalCount;
 
     const result = await this.client
       .from("memories")
@@ -446,11 +455,31 @@ export class SupabaseAdapter implements StorageAdapter {
     const key = field as keyof UserProfile;
 
     if (action === "set") {
-      (profile as unknown as Record<string, unknown>)[key] = value;
+      // Vitals: unpack { key, record } into profile.vitals[key] with previousValue tracking
+      if (field === "vitals" && typeof value === "object" && value !== null && 'key' in (value as Record<string, unknown>)) {
+        const vitalEntry = value as { key: string; record: { value: number; unit: string } };
+        const existing = profile.vitals[vitalEntry.key];
+        // Same value — skip to preserve previousValue trail
+        if (existing && existing.value === vitalEntry.record.value) {
+          return;
+        }
+        profile.vitals[vitalEntry.key] = {
+          ...vitalEntry.record,
+          recordedAt: new Date(),
+          ...(existing ? { previousValue: existing.value } : {}),
+        };
+      } else {
+        (profile as unknown as Record<string, unknown>)[key] = value;
+      }
     } else if (action === "add") {
       if (field === "vitals" && typeof value === "object" && value !== null) {
-        const vitalEntry = value as { key: string; record: unknown };
-        profile.vitals[vitalEntry.key] = vitalEntry.record as UserProfile["vitals"][string];
+        const vitalEntry = value as { key: string; record: { value: number; unit: string } };
+        const existing = profile.vitals[vitalEntry.key];
+        profile.vitals[vitalEntry.key] = {
+          ...vitalEntry.record,
+          recordedAt: new Date(),
+          ...(existing ? { previousValue: existing.value } : {}),
+        } as UserProfile["vitals"][string];
       } else if (field === "medications" && typeof value === "object" && value !== null) {
         const med = value as Medication;
         const idx = profile.medications.findIndex((m) => m.name === med.name);
@@ -459,6 +488,8 @@ export class SupabaseAdapter implements StorageAdapter {
         } else {
           profile.medications.push(med);
         }
+      } else if (field === "goals" && typeof value === "string") {
+        addGoalWithDedup(profile.goals, value);
       } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
         const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
         if (typeof value === "string" && !arr.includes(value)) {

@@ -1,7 +1,7 @@
 {
   "name": "vitamem",
   "version": "1.0.0",
-  "description": "Memory for AI health companions — lifecycle-aware threads that remember the rhythm of care.",
+  "description": "Lifecycle-aware long-term memory for AI — extract what matters when conversations rest, recall it when users return.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -25,17 +25,15 @@
   "keywords": [
     "ai",
     "memory",
-    "health",
-    "companion",
-    "counseling",
-    "therapy",
-    "wellness",
     "llm",
+    "lifecycle",
+    "session",
     "threads",
     "conversation",
     "embeddings",
     "typescript",
-    "mental-health"
+    "long-term-memory",
+    "retrieval"
   ],
   "author": "",
   "license": "MIT",

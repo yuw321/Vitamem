@@ -7,6 +7,7 @@ export {
   shouldCool,
   shouldGoDormant,
   reactivate,
+  shouldArchive,
   InvalidTransitionError,
 } from "./lifecycle/state-machine.js";
 export {
@@ -26,17 +27,19 @@ export {
 export { validateExtraction } from "./memory/extraction-schema.js";
 export type { ValidatedMemory } from "./memory/extraction-schema.js";
 export { classifyStructuredFacts, applyStructuredFacts } from "./memory/structured-extraction.js";
+export { reflectOnExtraction, applyReflectionResult } from "./memory/reflection.js";
 export { runEmbeddingPipeline } from "./embedding/pipeline.js";
 export {
   applyRecencyWeighting,
   applyMMR,
+  applyDecay,
 } from "./retrieval/reranking.js";
 export { EphemeralAdapter } from "./storage/ephemeral-adapter.js";
 export { SupabaseAdapter } from "./storage/supabase-adapter.js";
 
 // Adapter factories
-export { createOpenAIAdapter } from "./adapters/openai.js";
-export { createAnthropicAdapter } from "./adapters/anthropic.js";
+export { createOpenAIAdapter, HEALTH_EXTRACTION_PROMPT } from "./adapters/openai.js";
+export { createAnthropicAdapter, HEALTH_EXTRACTION_PROMPT_ANTHROPIC } from "./adapters/anthropic.js";
 export { createOllamaAdapter } from "./adapters/ollama.js";
 
 // Backward compatibility

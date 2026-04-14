@@ -38,7 +38,7 @@ const DEFAULT_CHAT_MODEL = "gpt-5.4-mini";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 const DEFAULT_EXTRACTION_PROMPT = `Extract key facts from this conversation that are worth remembering long-term.
-Focus on: health conditions, medications, lifestyle habits, goals, preferences, and personal context.
+Focus on: personal details, preferences, goals, habits, important context, and any information the user would expect to be remembered next time.
 
 Conversation:
 {conversation}
@@ -51,13 +51,115 @@ Return ONLY valid JSON (no markdown, no explanation):
   ]
 }
 
+Examples:
+{ "content": "Prefers TypeScript over JavaScript (mentioned {sessionDate})", "source": "confirmed", "tags": ["preference"] }
+{ "content": "Working on a React Native mobile app (mentioned {sessionDate})", "source": "confirmed", "tags": ["professional"] }
+{ "content": "Runs 5K three times a week (mentioned {sessionDate})", "source": "confirmed", "tags": ["lifestyle"] }
+{ "content": "Goal is to launch MVP by March (mentioned {sessionDate})", "source": "confirmed", "tags": ["goal"] }
+{ "content": "Has two kids in elementary school (mentioned {sessionDate})", "source": "confirmed", "tags": ["personal"] }
+{ "content": "Seems to prefer concise explanations (mentioned {sessionDate})", "source": "inferred", "tags": ["preference"] }
+
+Confirmed vs Inferred — WRONG (unsupported inference):
+{ "content": "Implementing changes to work-life balance", "source": "inferred", "tags": ["lifestyle"] }
+CORRECT (only extract what was stated):
+{ "content": "Leaves work by 5pm to pick up kids (mentioned {sessionDate})", "source": "confirmed", "tags": ["lifestyle"] }
+
+## Role-Aware Extraction
+- From USER messages: extract all stated facts — these are new user-reported data
+- From AI/ASSISTANT messages: extract ONLY genuinely new information (recommendations, advice, instructions). Do NOT re-extract user data that the AI is repeating back from memory context — skip echoed data.
+
+WRONG (re-extracting echoed data):
+AI says: "Since you prefer TypeScript, here's a typed example"
+{ "content": "Prefers TypeScript", "source": "inferred", "tags": ["preference"] }
+
+CORRECT (extract only new AI-provided information):
+AI says: "Since you prefer TypeScript, I recommend using Zod for runtime validation."
+{ "content": "Recommended using Zod for runtime validation (mentioned {sessionDate})", "source": "inferred", "tags": ["professional"] }
+
 Guidelines:
 - Each memory must have: content (string), source ("confirmed" or "inferred"), and tags (array of strings)
 - "confirmed" = user directly stated this fact
-- "inferred" = you derived this from context
+- "inferred" = a fact not directly stated but strongly implied by specific evidence in the conversation. Do NOT infer generalizations, assumptions, or speculations.
+- When in doubt between inferring a fact and not extracting it, do NOT extract. Only use source "inferred" when the evidence is unambiguous and the inference is narrowly supported by what was actually said.
+- Tag each fact with a category: "preference", "goal", "personal", "professional", "lifestyle", or "general"
+- Skip greetings, questions, and one-time events
+- Be specific (include numbers, dates, names when mentioned)
+- Append the session date in parentheses to each extracted fact, e.g., '(mentioned {sessionDate})'. This helps track when information was reported.
+- When a value has been updated, extract ONLY the current value. Do not create a separate fact for the previous value — the system tracks changes automatically.
+- Do not extract facts that merely restate information from earlier in the conversation. Focus on what is NEW or CHANGED.
+- Return empty memories array if no facts found: { "memories": [] }`;
+
+/**
+ * Health-domain extraction prompt with structured profile field support.
+ * Use with `structuredExtractionRules: HEALTH_STRUCTURED_RULES` for health companion apps.
+ */
+export const HEALTH_EXTRACTION_PROMPT = `Extract key facts from this conversation that are worth remembering long-term.
+Focus on: health conditions, medications, lifestyle habits, goals, preferences, and personal context.
+
+Conversation:
+{conversation}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "memories": [
+    { "content": "brief factual statement", "source": "confirmed", "tags": ["category"], "profileField": "none" },
+    { "content": "another fact derived from context", "source": "inferred", "tags": ["category"], "profileField": "none" }
+  ]
+}
+
+Every fact MUST include a profileField. Set it to one of: "conditions", "medications", "allergies", "vitals", "goals", or "none". Use "none" when the fact is general context that does not map to a specific profile field.
+
+Additional fields for profile-mapped facts:
+- "profileValue": the extracted value (string for conditions/allergies/goals, object for medications, number for vitals)
+- "profileKey": (vitals only) the metric name, e.g. "a1c", "blood_pressure", "weight"
+- "profileUnit": (vitals only) the unit, e.g. "%", "mmHg", "lbs"
+
+IMPORTANT: Only classify a value as profileField "vitals" when it is an actual measurement or lab result (e.g., "My A1C came back at 7.4%", "blood pressure is 130/85"). When the user mentions a target, goal, or desired threshold (e.g., "doctor wants me under 7%", "aiming for 120 lbs", "goal of reducing cholesterol"), classify it as profileField "goals" with the target description as profileValue. NEVER classify a goal or target as a vital.
+
+For medications, profileValue should be: { "name": "...", "dosage": "...", "frequency": "..." }
+For medications, always extract the complete frequency (e.g., "twice daily", not "twice"). The medication profileValue object must have complete dosage and frequency fields when mentioned by the user.
+For allergies, conditions, goals: profileValue is a simple string.
+For conditions, extract only the clean medical term as profileValue (e.g., "Type 2 diabetes"), not conversational phrasing (e.g., NOT "been managing Type 2 diabetes" or "diagnosed with Type 2 diabetes last year"). Strip verbs, temporal context, and filler words from profileValue.
+Examples:
+{ "content": "Latest A1C is 6.8% (mentioned {sessionDate})", "source": "confirmed", "tags": ["vital"], "profileField": "vitals", "profileKey": "a1c", "profileValue": 6.8, "profileUnit": "%" }
+{ "content": "Allergic to penicillin (mentioned {sessionDate})", "source": "confirmed", "tags": ["allergy"], "profileField": "allergies", "profileValue": "penicillin" }
+{ "content": "Takes metformin 1000mg twice daily (mentioned {sessionDate})", "source": "confirmed", "tags": ["medication"], "profileField": "medications", "profileValue": { "name": "metformin", "dosage": "1000mg", "frequency": "twice daily" } }
+{ "content": "Has Type 2 diabetes (mentioned {sessionDate})", "source": "confirmed", "tags": ["condition"], "profileField": "conditions", "profileValue": "Type 2 diabetes" }
+{ "content": "Wants to lower A1C below 7% (mentioned {sessionDate})", "source": "confirmed", "tags": ["goal"], "profileField": "goals", "profileValue": "Lower A1C below 7%" }
+{ "content": "Exercises Monday, Wednesday, and Friday (mentioned {sessionDate})", "source": "confirmed", "tags": ["lifestyle"], "profileField": "none" }
+
+Goal vs Vital distinction — WRONG:
+{ "content": "Doctor wants A1C under 7%", "source": "confirmed", "tags": ["vital"], "profileField": "vitals", "profileKey": "a1c", "profileValue": 7.0, "profileUnit": "%" }
+CORRECT:
+{ "content": "Doctor wants A1C under 7% (mentioned {sessionDate})", "source": "confirmed", "tags": ["goal"], "profileField": "goals", "profileValue": "A1C under 7%" }
+
+Confirmed vs Inferred inference — WRONG (unsupported inference):
+{ "content": "Implementing changes to exercise routine", "source": "inferred", "tags": ["lifestyle"], "profileField": "none" }
+CORRECT (only extract what was stated):
+{ "content": "Exercises Monday, Wednesday, and Friday (mentioned {sessionDate})", "source": "confirmed", "tags": ["lifestyle"], "profileField": "none" }
+
+## Role-Aware Extraction
+- From USER messages: extract all stated facts — these are new user-reported data
+- From AI/ASSISTANT messages: extract ONLY genuinely new information (medical advice, care instructions, recommendations). Do NOT re-extract user data that the AI is repeating back from memory (e.g., if the AI says "your A1C is 6.8%", that is echoed data, not a new measurement — skip it)
+- If the AI provides a NEW recommendation or instruction (e.g., "take metformin with food to reduce stomach upset"), that IS worth extracting as an inferred fact
+
+WRONG (re-extracting echoed data):
+AI says: "Based on your records, your A1C is 6.8% and you take metformin 1000mg"
+{ "content": "A1C is 6.8%", "source": "inferred", "tags": ["vital"], "profileField": "vitals" }
+
+CORRECT (extract only new AI-provided information):
+AI says: "Based on your records, your A1C is 6.8%. I recommend taking metformin with food."
+{ "content": "Take metformin with food to reduce stomach upset (mentioned {sessionDate})", "source": "inferred", "tags": ["medication"], "profileField": "none" }
+
+Guidelines:
+- Each memory must have: content (string), source ("confirmed" or "inferred"), and tags (array of strings)
+- "confirmed" = user directly stated this fact
+- "inferred" = a fact not directly stated but strongly implied by specific evidence in the conversation. Do NOT infer generalizations, assumptions, or speculations.
+- When in doubt between inferring a fact and not extracting it, do NOT extract. Only use source "inferred" when the evidence is unambiguous and the inference is narrowly supported by what was actually said.
 - Tag each fact with a category: "condition", "medication", "lifestyle", "vital", "goal", "social", or "general"
 - Skip greetings, questions, and one-time events
 - Be specific (include numbers, dosages, dates when mentioned)
+- Append the session date in parentheses to each extracted fact, e.g., '(mentioned {sessionDate})'. This helps track when information was reported.
 - When a value has been updated (e.g., A1C went from 7.4% to 6.8%), extract ONLY the current value as the fact. Do not create a separate fact for the previous value — the system tracks changes automatically.
 - Do not extract facts that merely restate information from earlier in the conversation. Focus on what is NEW or CHANGED.
 - For health metrics (A1C, blood pressure, weight, glucose, etc.), always extract the most recent value only.
@@ -183,12 +285,23 @@ export function createOpenAIAdapter(opts: OpenAIAdapterOptions): LLMAdapter {
 
     async extractMemories(
       messages: Message[],
-    ): Promise<Array<{ content: string; source: MemorySource }>> {
+      sessionDate?: string,
+    ): Promise<Array<{
+      content: string;
+      source: MemorySource;
+      tags?: string[];
+      profileField?: 'conditions' | 'medications' | 'allergies' | 'vitals' | 'goals' | 'none';
+      profileKey?: string;
+      profileValue?: string | number | { name: string; dosage?: string; frequency?: string };
+      profileUnit?: string;
+    }>> {
       const conversation = messages
         .map((m) => `${m.role}: ${m.content}`)
         .join("\n");
 
-      const prompt = extractionPrompt.replace("{conversation}", conversation);
+      const dateStr = sessionDate ?? new Date().toISOString().slice(0, 10);
+      let prompt = extractionPrompt.replace("{conversation}", conversation);
+      prompt = prompt.replace(/\{sessionDate\}/g, dateStr);
 
       const client = await getClient();
 

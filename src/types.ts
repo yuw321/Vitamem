@@ -44,6 +44,10 @@ export interface Memory {
   createdAt: Date;
   pinned?: boolean;
   tags?: string[];
+  /** When this memory was last retrieved */
+  lastRetrievedAt?: Date;
+  /** How many times this memory has been retrieved */
+  retrievalCount?: number;
 }
 
 export interface MemoryMatch {
@@ -55,6 +59,19 @@ export interface MemoryMatch {
   pinned?: boolean;
   tags?: string[];
   embedding?: number[];
+  /** When this memory was last retrieved */
+  lastRetrievedAt?: Date;
+  /** How many times this memory has been retrieved */
+  retrievalCount?: number;
+}
+
+// ── Forgetting / decay configuration ──
+
+export interface ForgettingConfig {
+  /** Half-life for memory decay in milliseconds. Default: 180 days (15552000000ms) */
+  forgettingHalfLifeMs?: number;
+  /** Score threshold below which memories are archived. Default: 0.1 */
+  minRetrievalScore?: number;
 }
 
 // ── Storage adapter interface ──
@@ -103,7 +120,16 @@ export interface LLMAdapter {
   ): AsyncGenerator<string, void, unknown>;
   extractMemories(
     messages: Message[],
-  ): Promise<Array<{ content: string; source: MemorySource }>>;
+    sessionDate?: string,
+  ): Promise<Array<{
+    content: string;
+    source: MemorySource;
+    tags?: string[];
+    profileField?: 'conditions' | 'medications' | 'allergies' | 'vitals' | 'goals' | 'none';
+    profileKey?: string;
+    profileValue?: string | number | { name: string; dosage?: string; frequency?: string };
+    profileUnit?: string;
+  }>>;
   embed(text: string): Promise<number[]>;
 }
 
@@ -287,6 +313,36 @@ export function createEmptyProfile(userId: string): UserProfile {
   };
 }
 
+// ── Reflection types ──
+
+export interface ReflectionResult {
+  correctedFacts: Array<{
+    content: string;
+    source: 'confirmed' | 'inferred';
+    action: 'keep' | 'enrich' | 'remove';
+    reason?: string;
+    tags?: string[];
+    profileField?: string;
+    profileKey?: string;
+    profileValue?: string;
+    profileUnit?: string;
+  }>;
+  missedFacts: Array<{
+    content: string;
+    source: 'confirmed' | 'inferred';
+    tags?: string[];
+    profileField?: string;
+    profileKey?: string;
+    profileValue?: string;
+    profileUnit?: string;
+  }>;
+  conflicts: Array<{
+    newFact: string;
+    existingMemory: string;
+    resolution: 'keep_new' | 'keep_existing' | 'merge';
+  }>;
+}
+
 // ── Configuration ──
 
 import type { PresetName } from "./presets.js";
@@ -343,13 +399,31 @@ export interface VitamemConfig {
    * Facts with similarity >= supersedeThreshold and < deduplicationThreshold update the existing memory. */
   supersedeThreshold?: number;
 
-  // === Auto-Pinning ===
+  // === Active Forgetting ===
+  /** Configuration for relevance decay / active forgetting. If not set, decay is disabled. */
+  forgetting?: ForgettingConfig;
+
+    // === Auto-Pinning ===
   /** Rules that automatically pin critical memories during extraction. Use HEALTH_AUTO_PIN_RULES for health domains. */
   autoPinRules?: AutoPinRule[];
 
   // === Structured Extraction ===
   /** Rules for extracting structured facts into the user profile. Use HEALTH_STRUCTURED_RULES for health domains. */
   structuredExtractionRules?: StructuredExtractionRule[];
+
+  // === Extraction Reflection ===
+  /** Enable a second LLM call to validate/enrich extracted facts. Default: false (opt-in). */
+  enableReflection?: boolean;
+  /** Optional custom prompt override for the reflection LLM call. */
+  reflectionPrompt?: string;
+
+  // === Formatter Overhaul ===
+  /** Split context into stable prefix (profile + pinned) and dynamic suffix (retrieved) for LLM caching. Default: false (opt-in). */
+  cacheableContext?: boolean;
+  /** Prepend priority markers ([CRITICAL], [IMPORTANT], [INFO]) to each memory line. Default: true. */
+  prioritySignaling?: boolean;
+  /** Sort retrieved memories by createdAt and group by month/year with date headers. Default: true. */
+  chronologicalRetrieval?: boolean;
 }
 
 // ── Facade interface ──

@@ -68,7 +68,7 @@ describe('extractMemories', () => {
 
     const result = await extractMemories(messages, llm);
 
-    expect(llm.extractMemories).toHaveBeenCalledWith(messages);
+    expect(llm.extractMemories).toHaveBeenCalledWith(messages, undefined);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ content: 'Prefers TypeScript', source: 'confirmed' });
     expect(result[0].tags).toBeDefined();

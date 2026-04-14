@@ -16,9 +16,15 @@ import {
 } from "../lifecycle/state-machine.js";
 import { runEmbeddingPipeline } from "../embedding/pipeline.js";
 import { EphemeralAdapter } from "../storage/ephemeral-adapter.js";
-import { applyRecencyWeighting, applyMMR } from "../retrieval/reranking.js";
+import { applyRecencyWeighting, applyMMR, applyDecay } from "../retrieval/reranking.js";
 
 const DEFAULT_COOLING_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/** Month names for chronological date headers. */
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 /**
  * Format a UserProfile as a structured text summary for LLM context injection.
@@ -56,7 +62,143 @@ function formatProfileContext(profile: UserProfile): string {
     lines.push(`Emergency contacts: ${profile.emergencyContacts.join(", ")}`);
   }
 
-  return lines.length > 0 ? `Patient Profile:\n${lines.join("\n")}` : "";
+  return lines.length > 0 ? `User Profile:\n${lines.join("\n")}` : "";
+}
+
+/**
+ * Get the priority marker for a memory based on its source and pinned status.
+ */
+function getPriorityMarker(memory: MemoryMatch): string {
+  if (memory.pinned && memory.source === "confirmed") return "[CRITICAL]";
+  if (memory.source === "confirmed") return "[IMPORTANT]";
+  return "[INFO]";
+}
+
+/**
+ * Get the source label for a memory (e.g., "(confirmed, pinned)" or "(inferred)").
+ */
+function getSourceLabel(memory: MemoryMatch): string {
+  if (memory.pinned) return "(confirmed, pinned)";
+  return `(${memory.source})`;
+}
+
+/**
+ * Format a single memory line with optional priority marker and date mention.
+ */
+function formatMemoryLine(
+  memory: MemoryMatch,
+  prioritySignaling: boolean,
+  showDate: boolean,
+): string {
+  const parts: string[] = ["- "];
+  if (prioritySignaling) {
+    parts.push(`${getPriorityMarker(memory)} `);
+  }
+  parts.push(memory.content);
+  if (showDate && memory.createdAt) {
+    const d = memory.createdAt instanceof Date ? memory.createdAt : new Date(memory.createdAt as unknown as string);
+    const dateStr = d.toISOString().split("T")[0];
+    if (!memory.content.includes(`(mentioned ${dateStr})`)) {
+      parts.push(` (mentioned ${dateStr})`);
+    }
+  }
+  parts.push(` ${getSourceLabel(memory)}`);
+  return parts.join("");
+}
+
+interface FormatterOptions {
+  prioritySignaling: boolean;
+  chronologicalRetrieval: boolean;
+  cacheableContext: boolean;
+}
+
+/**
+ * The overhauled default memory context formatter.
+ *
+ * Produces structured output with:
+ * - Profile section (if profile data exists)
+ * - Critical Memories section (pinned memories)
+ * - Retrieved Memories section (with optional chronological grouping)
+ * - Cache-friendly separation when enabled
+ */
+export function formatMemoryContextDefault(
+  memories: MemoryMatch[],
+  _query: string,
+  profile: UserProfile | null,
+  options: FormatterOptions,
+): string {
+  const { prioritySignaling, chronologicalRetrieval, cacheableContext } = options;
+  const sections: string[] = [];
+
+  // ── Stable prefix: Profile + Pinned ──
+
+  // Profile section
+  if (profile) {
+    const profileText = formatProfileContext(profile);
+    if (profileText) {
+      // Replace "User Profile:" header with our section header
+      const profileBody = profileText.replace(/^User Profile:\n/, "");
+      sections.push(`=== User Profile ===\n${profileBody}`);
+    }
+  }
+
+  // Critical memories section (pinned only)
+  const pinnedMemories = memories.filter((m) => m.pinned);
+  if (pinnedMemories.length > 0) {
+    const pinnedLines = pinnedMemories.map((m) =>
+      formatMemoryLine(m, prioritySignaling, false),
+    );
+    sections.push(`=== Critical Memories (Always Active) ===\n${pinnedLines.join("\n")}`);
+  }
+
+  // Cache separator
+  const stablePrefixEnd = sections.length;
+  if (cacheableContext && stablePrefixEnd > 0) {
+    sections.push("<!-- stable context above, dynamic below -->");
+  }
+
+  // ── Dynamic suffix: Retrieved (non-pinned) memories ──
+
+  const retrievedMemories = memories.filter((m) => !m.pinned);
+  if (retrievedMemories.length > 0) {
+    if (chronologicalRetrieval) {
+      // Sort by createdAt ascending
+      const sorted = [...retrievedMemories].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt as unknown as string).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt as unknown as string).getTime() : 0;
+        return aTime - bTime;
+      });
+
+      // Group by month/year
+      const groups = new Map<string, MemoryMatch[]>();
+      for (const mem of sorted) {
+        let groupKey = "Unknown";
+        if (mem.createdAt) {
+          const d = mem.createdAt instanceof Date ? mem.createdAt : new Date(mem.createdAt as unknown as string);
+          groupKey = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+        }
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey)!.push(mem);
+      }
+
+      const retrievedLines: string[] = [];
+      for (const [groupKey, mems] of groups) {
+        retrievedLines.push(`--- ${groupKey} ---`);
+        for (const mem of mems) {
+          retrievedLines.push(formatMemoryLine(mem, prioritySignaling, true));
+        }
+      }
+      sections.push(`=== Retrieved Memories ===\n${retrievedLines.join("\n")}`);
+    } else {
+      // Flat list (no chronological grouping)
+      const lines = retrievedMemories.map((m) =>
+        formatMemoryLine(m, prioritySignaling, false),
+      );
+      sections.push(`=== Retrieved Memories ===\n${lines.join("\n")}`);
+    }
+  }
+
+  return sections.join("\n\n");
 }
 
 /**
@@ -217,13 +359,40 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
   const supersedeThreshold = config.supersedeThreshold ?? 0.75;
   const autoPinRules = config.autoPinRules ?? [];
   const structuredRules = config.structuredExtractionRules;
+  const enableReflection = config.enableReflection ?? false;
+  const reflectionPrompt = config.reflectionPrompt;
   const autoRetrieve = config.autoRetrieve ?? false;
   const minScore = config.minScore ?? 0;
   const recencyWeight = config.recencyWeight ?? 0;
   const recencyMaxAgeMs = config.recencyMaxAgeMs ?? 90 * 24 * 60 * 60 * 1000;
   const diversityWeight = config.diversityWeight ?? 0;
   const onRetrieve = config.onRetrieve;
-  const memoryContextFormatter = config.memoryContextFormatter;
+  const customFormatter = config.memoryContextFormatter;
+  const forgettingConfig = config.forgetting;
+
+  // Formatter overhaul options
+  const prioritySignaling = config.prioritySignaling ?? true;
+  const chronologicalRetrieval = config.chronologicalRetrieval ?? true;
+  const cacheableContext = config.cacheableContext ?? false;
+
+  /**
+   * Build the memory context string for injection into chat.
+   * Uses the custom formatter if provided, otherwise the new default formatter.
+   */
+  function buildMemoryContext(
+    memories: MemoryMatch[],
+    query: string,
+    profile: UserProfile | null,
+  ): string {
+    if (customFormatter) {
+      return customFormatter(memories, query);
+    }
+    return formatMemoryContextDefault(memories, query, profile, {
+      prioritySignaling,
+      chronologicalRetrieval,
+      cacheableContext,
+    });
+  }
 
   /**
    * Full retrieval pipeline:
@@ -296,22 +465,42 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       vectorResults = suppressStaleMemories(vectorResults, profile);
     }
 
-    // 6. Apply recency weighting (if recencyWeight > 0)
+    // 6. Apply active forgetting decay (if configured)
+    if (forgettingConfig) {
+      vectorResults = applyDecay(vectorResults, forgettingConfig);
+    }
+
+    // 7. Apply recency weighting (if recencyWeight > 0)
     if (recencyWeight > 0) {
       vectorResults = applyRecencyWeighting(vectorResults, recencyWeight, recencyMaxAgeMs);
     }
 
-    // 7. Apply MMR diversity (if diversityWeight > 0)
+    // 8. Apply MMR diversity (if diversityWeight > 0)
     if (diversityWeight > 0) {
       vectorResults = applyMMR(vectorResults, diversityWeight, limit);
     }
 
-    // 8. Merge: pinned first, then vector results
+    // 9. Merge: pinned first, then vector results
     let results = [...pinnedMatches, ...vectorResults];
 
-    // 9. Pass through onRetrieve hook
+    // 10. Pass through onRetrieve hook
     if (onRetrieve) {
       results = await onRetrieve(results, query ?? "");
+    }
+
+    // 11. Fire-and-forget: update retrieval metadata for returned memories
+    if (forgettingConfig && storage.updateMemory) {
+      const now = new Date();
+      for (const mem of results) {
+        if (mem.id) {
+          storage.updateMemory(mem.id, {
+            lastRetrievedAt: now,
+            retrievalCount: (mem.retrievalCount ?? 0) + 1,
+          } as Partial<import("../types.js").Memory>).catch(() => {
+            // fire-and-forget: don't block retrieval on metadata updates
+          });
+        }
+      }
     }
 
     return { memories: results, profile };
@@ -360,22 +549,30 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         );
         retrievedMemories = pipelineResult.memories;
 
-        // Inject profile context as the FIRST system message
-        if (pipelineResult.profile) {
-          const profileText = formatProfileContext(pipelineResult.profile);
-          if (profileText) {
-            chatMessages.push({ role: "system", content: profileText });
+        if (customFormatter) {
+          // Legacy behavior: inject profile separately, then custom-formatted memories
+          if (pipelineResult.profile) {
+            const profileText = formatProfileContext(pipelineResult.profile);
+            if (profileText) {
+              chatMessages.push({ role: "system", content: profileText });
+            }
           }
-        }
-
-        if (retrievedMemories.length > 0) {
-          const defaultFormatter = (memories: MemoryMatch[]) =>
-            `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
-          const formatter = memoryContextFormatter ?? defaultFormatter;
-          chatMessages.push({
-            role: "system",
-            content: formatter(retrievedMemories, message),
-          });
+          if (retrievedMemories.length > 0) {
+            chatMessages.push({
+              role: "system",
+              content: customFormatter(retrievedMemories, message),
+            });
+          }
+        } else {
+          // New default formatter: unified context (profile + pinned + retrieved)
+          const contextStr = buildMemoryContext(
+            retrievedMemories,
+            message,
+            pipelineResult.profile,
+          );
+          if (contextStr) {
+            chatMessages.push({ role: "system", content: contextStr });
+          }
         }
       }
 
@@ -438,6 +635,14 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       const thread = await storage.getThread(threadId);
       if (!thread) throw new Error(`Thread not found: ${threadId}`);
 
+      if (thread.state === "closed") {
+        throw new Error(
+          `Cannot trigger dormant transition on closed thread: ${threadId}`,
+        );
+      }
+
+      const wasAlreadyDormant = thread.state === "dormant";
+
       // Transition: active → cooling → dormant
       let current = thread;
       if (current.state === "active") {
@@ -448,6 +653,10 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
       }
 
       await storage.updateThread(current);
+
+      if (wasAlreadyDormant) {
+        return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted: 0, profileFieldsUpdated: 0 };
+      }
 
       // Run embedding pipeline
       const messages = await storage.getMessages(threadId);
@@ -461,6 +670,8 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         embeddingConcurrency,
         autoPinRules,
         structuredRules,
+        enableReflection,
+        reflectionPrompt,
       );
       return pipelineResult;
     },
@@ -515,6 +726,8 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
             embeddingConcurrency,
             autoPinRules,
             structuredRules,
+            enableReflection,
+            reflectionPrompt,
           );
         }
       }
@@ -603,22 +816,30 @@ export async function createVitamem(config: VitamemConfig): Promise<Vitamem> {
         );
         retrievedMemories = pipelineResult.memories;
 
-        // Inject profile context as the FIRST system message
-        if (pipelineResult.profile) {
-          const profileText = formatProfileContext(pipelineResult.profile);
-          if (profileText) {
-            chatMessages.push({ role: "system", content: profileText });
+        if (customFormatter) {
+          // Legacy behavior: inject profile separately, then custom-formatted memories
+          if (pipelineResult.profile) {
+            const profileText = formatProfileContext(pipelineResult.profile);
+            if (profileText) {
+              chatMessages.push({ role: "system", content: profileText });
+            }
           }
-        }
-
-        if (retrievedMemories.length > 0) {
-          const defaultFormatter = (memories: MemoryMatch[]) =>
-            `Relevant context from previous sessions:\n${memories.map((m) => `- ${m.content} (${m.source})`).join("\n")}`;
-          const formatter = memoryContextFormatter ?? defaultFormatter;
-          chatMessages.push({
-            role: "system",
-            content: formatter(retrievedMemories, message),
-          });
+          if (retrievedMemories.length > 0) {
+            chatMessages.push({
+              role: "system",
+              content: customFormatter(retrievedMemories, message),
+            });
+          }
+        } else {
+          // New default formatter: unified context (profile + pinned + retrieved)
+          const contextStr = buildMemoryContext(
+            retrievedMemories,
+            message,
+            pipelineResult.profile,
+          );
+          if (contextStr) {
+            chatMessages.push({ role: "system", content: contextStr });
+          }
         }
       }
 

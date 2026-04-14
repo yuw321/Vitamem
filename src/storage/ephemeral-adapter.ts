@@ -10,6 +10,7 @@ import {
   createEmptyProfile,
 } from "../types.js";
 import { cosineSimilarity } from "../memory/deduplication.js";
+import { addGoalWithDedup } from "./goal-dedup.js";
 
 /**
  * Ephemeral storage adapter — data lives in process memory.
@@ -117,6 +118,8 @@ export class EphemeralAdapter implements StorageAdapter {
         pinned: m.pinned,
         tags: m.tags,
         embedding: m.embedding ?? undefined,
+        lastRetrievedAt: m.lastRetrievedAt,
+        retrievalCount: m.retrievalCount,
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
@@ -172,11 +175,31 @@ export class EphemeralAdapter implements StorageAdapter {
     const key = field as keyof UserProfile;
 
     if (action === "set") {
-      (profile as unknown as Record<string, unknown>)[key] = value;
+      // Vitals: unpack { key, record } into profile.vitals[key] with previousValue tracking
+      if (field === "vitals" && typeof value === "object" && value !== null && 'key' in (value as Record<string, unknown>)) {
+        const vitalEntry = value as { key: string; record: { value: number; unit: string } };
+        const existing = profile.vitals[vitalEntry.key];
+        // Same value — skip to preserve previousValue trail
+        if (existing && existing.value === vitalEntry.record.value) {
+          return;
+        }
+        profile.vitals[vitalEntry.key] = {
+          ...vitalEntry.record,
+          recordedAt: new Date(),
+          ...(existing ? { previousValue: existing.value } : {}),
+        };
+      } else {
+        (profile as unknown as Record<string, unknown>)[key] = value;
+      }
     } else if (action === "add") {
       if (field === "vitals" && typeof value === "object" && value !== null) {
-        const vitalEntry = value as { key: string; record: unknown };
-        profile.vitals[vitalEntry.key] = vitalEntry.record as UserProfile["vitals"][string];
+        const vitalEntry = value as { key: string; record: { value: number; unit: string } };
+        const existing = profile.vitals[vitalEntry.key];
+        profile.vitals[vitalEntry.key] = {
+          ...vitalEntry.record,
+          recordedAt: new Date(),
+          ...(existing ? { previousValue: existing.value } : {}),
+        } as UserProfile["vitals"][string];
       } else if (field === "medications" && typeof value === "object" && value !== null) {
         const med = value as Medication;
         const idx = profile.medications.findIndex((m) => m.name === med.name);
@@ -185,6 +208,8 @@ export class EphemeralAdapter implements StorageAdapter {
         } else {
           profile.medications.push(med);
         }
+      } else if (field === "goals" && typeof value === "string") {
+        addGoalWithDedup(profile.goals, value);
       } else if (Array.isArray((profile as unknown as Record<string, unknown>)[key])) {
         const arr = (profile as unknown as Record<string, unknown>)[key] as unknown[];
         if (typeof value === "string" && !arr.includes(value)) {

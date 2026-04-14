@@ -1,6 +1,19 @@
 import { MemoryMatch } from "../types.js";
 import { cosineSimilarity } from "../memory/deduplication.js";
 
+/** Default half-life: 180 days in milliseconds */
+const DEFAULT_HALF_LIFE_MS = 180 * 24 * 60 * 60 * 1000;
+
+type DateLike = Date | string | undefined | null;
+
+/** Safely extract a ms timestamp from a Date object or ISO string. */
+function toTimestamp(d: DateLike): number | null {
+  if (d == null) return null;
+  if (d instanceof Date) return d.getTime();
+  const ms = new Date(d).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 /**
  * Apply recency weighting to memory matches.
  * Blends cosine similarity with a time-decay factor.
@@ -21,11 +34,61 @@ export function applyRecencyWeighting(
 
   return results
     .map((r) => {
-      const ageMs = r.createdAt ? now - r.createdAt.getTime() : maxAgeMs;
+      const createdTs = toTimestamp(r.createdAt as DateLike);
+      const ageMs = createdTs !== null ? now - createdTs : maxAgeMs;
       const recencyFactor = Math.max(0, 1 - ageMs / maxAgeMs);
       const finalScore =
         r.score * (1 - recencyWeight) + recencyFactor * recencyWeight;
       return { ...r, score: finalScore };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Apply active-forgetting decay to memory match scores.
+ * Memories that haven't been retrieved recently get a score penalty.
+ * Pinned memories are exempt from decay.
+ *
+ * @param results - Memory matches to apply decay to
+ * @param config - Forgetting configuration with optional halfLife
+ * @returns Re-scored and re-sorted results
+ */
+export function applyDecay(
+  results: MemoryMatch[],
+  config: { forgettingHalfLifeMs?: number },
+): MemoryMatch[] {
+  if (results.length === 0) return results;
+
+  const halfLife = config.forgettingHalfLifeMs ?? DEFAULT_HALF_LIFE_MS;
+  const now = Date.now();
+
+  return results
+    .map((r) => {
+      // Pinned memories are exempt from decay
+      if (r.pinned) return r;
+
+      const lastRetrievedTs = toTimestamp(r.lastRetrievedAt as DateLike);
+      const createdTs = toTimestamp(r.createdAt as DateLike);
+      const referenceTime = lastRetrievedTs ?? createdTs ?? now;
+
+      const timeSinceLastRetrieval = now - referenceTime;
+
+      // Base decay factor: inversely proportional to time since last retrieval
+      // decayFactor = max(0.1, 1 - (timeSinceLastRetrieval / (2 * halfLife)))
+      let decayFactor = Math.max(
+        0.1,
+        1 - timeSinceLastRetrieval / (2 * halfLife),
+      );
+
+      // Retrieval count bonus: frequently retrieved memories resist decay
+      const retrievalCount = r.retrievalCount ?? 0;
+      if (retrievalCount > 0) {
+        // Each retrieval adds a small boost (diminishing returns via log)
+        const retrievalBoost = Math.min(0.3, Math.log1p(retrievalCount) * 0.1);
+        decayFactor = Math.min(1, decayFactor + retrievalBoost);
+      }
+
+      return { ...r, score: r.score * decayFactor };
     })
     .sort((a, b) => b.score - a.score);
 }

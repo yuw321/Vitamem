@@ -4,6 +4,10 @@ export interface ExtractedFact {
   content: string;
   source: MemorySource;
   tags?: string[];
+  profileField?: 'conditions' | 'medications' | 'allergies' | 'vitals' | 'goals' | 'none';
+  profileKey?: string;
+  profileValue?: string | number | { name: string; dosage?: string; frequency?: string };
+  profileUnit?: string;
 }
 
 /**
@@ -14,10 +18,11 @@ export interface ExtractedFact {
 export async function extractMemories(
   messages: Message[],
   llm: LLMAdapter,
+  sessionDate?: string,
 ): Promise<ExtractedFact[]> {
   if (messages.length === 0) return [];
 
-  const extracted = await llm.extractMemories(messages);
+  const extracted = await llm.extractMemories(messages, sessionDate);
 
   // Validate and normalize
   return extracted
@@ -26,6 +31,10 @@ export async function extractMemories(
       content: f.content.trim(),
       source: f.source === 'confirmed' || f.source === 'inferred' ? f.source : 'inferred',
       tags: classifyTags(f.content),
+      ...(f.profileField !== undefined && { profileField: f.profileField }),
+      ...(f.profileKey !== undefined && { profileKey: f.profileKey }),
+      ...(f.profileValue !== undefined && { profileValue: f.profileValue }),
+      ...(f.profileUnit !== undefined && { profileUnit: f.profileUnit }),
     }));
 }
 

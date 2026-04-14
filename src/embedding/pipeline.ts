@@ -2,6 +2,7 @@ import { Thread, Message, LLMAdapter, StorageAdapter, AutoPinRule, MemorySource,
 import { extractMemories, ExtractedFact } from "../memory/extraction.js";
 import { classifyFact } from "../memory/deduplication.js";
 import { classifyStructuredFacts, applyStructuredFacts } from "../memory/structured-extraction.js";
+import { reflectOnExtraction, applyReflectionResult } from "../memory/reflection.js";
 
 export interface EmbeddingPipelineResult {
   memoriesSaved: number;
@@ -9,6 +10,13 @@ export interface EmbeddingPipelineResult {
   memoriesSuperseded: number;
   totalExtracted: number;
   profileFieldsUpdated: number;
+  /** Reflection stats (only present when enableReflection is true) */
+  reflection?: {
+    factsModified: number;
+    factsRemoved: number;
+    missedFactsAdded: number;
+    conflictsFound: number;
+  };
 }
 
 /**
@@ -79,11 +87,17 @@ export async function runEmbeddingPipeline(
   embeddingConcurrency = 5,
   autoPinRules: AutoPinRule[] = [],
   structuredRules?: StructuredExtractionRule[],
+  enableReflection = false,
+  reflectionPrompt?: string,
 ): Promise<EmbeddingPipelineResult> {
+  // Derive session date from thread metadata (YYYY-MM-DD)
+  const sessionDateSource = thread.lastMessageAt ?? thread.createdAt;
+  const sessionDate = sessionDateSource.toISOString().slice(0, 10);
+
   // Step 1: Extract facts
   let extractedFacts: ExtractedFact[];
   try {
-    extractedFacts = await extractMemories(messages, llm);
+    extractedFacts = await extractMemories(messages, llm, sessionDate);
   } catch (extractError) {
     console.error('[vitamem:pipeline] extraction failed:', extractError);
     extractedFacts = [];
@@ -92,6 +106,36 @@ export async function runEmbeddingPipeline(
 
   if (totalExtracted === 0) {
     return { memoriesSaved: 0, memoriesDeduped: 0, memoriesSuperseded: 0, totalExtracted: 0, profileFieldsUpdated: 0 };
+  }
+
+  // Step 1a: Reflection pass (optional — validates/enriches extracted facts)
+  let reflectionStats: EmbeddingPipelineResult['reflection'] | undefined;
+  if (enableReflection) {
+    try {
+      const existingMemories = await storage.getMemories(thread.userId);
+      const existingForReflection = existingMemories.map(m => ({ content: m.content, source: m.source }));
+      const originalMessages = messages.map(m => ({ role: m.role, content: m.content }));
+
+      const reflectionResult = await reflectOnExtraction(
+        extractedFacts,
+        existingForReflection,
+        originalMessages,
+        llm,
+        reflectionPrompt,
+      );
+
+      const factsModified = reflectionResult.correctedFacts.filter(f => f.action === 'enrich').length;
+      const factsRemoved = reflectionResult.correctedFacts.filter(f => f.action === 'remove').length;
+      const missedFactsAdded = reflectionResult.missedFacts.length;
+      const conflictsFound = reflectionResult.conflicts.length;
+
+      reflectionStats = { factsModified, factsRemoved, missedFactsAdded, conflictsFound };
+
+      // Replace extracted facts with reflection output
+      extractedFacts = applyReflectionResult(reflectionResult);
+    } catch (reflectionError) {
+      console.warn('[vitamem:reflection] Reflection step failed, using original facts:', reflectionError);
+    }
   }
 
   // Step 1b: Classify structured facts (if rules provided)
@@ -149,8 +193,10 @@ export async function runEmbeddingPipeline(
         break;
 
       case "supersede": {
-        // Update the existing memory with new content and embedding
-        const existing = existingMemories[classification.existingIndex];
+        // existingIndex is into the combined [existingMemories, ...inBatch] array.
+        // Only supersede when it refers to an actual persisted memory.
+        const isPersistedMemory = classification.existingIndex < existingMemories.length;
+        const existing = isPersistedMemory ? existingMemories[classification.existingIndex] : undefined;
         if (storage.updateMemory && existing?.id) {
           const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
           // Preserve higher-confidence source: never downgrade "confirmed" → "inferred"
@@ -165,7 +211,7 @@ export async function runEmbeddingPipeline(
             ...(preservedPinned && { pinned: true }),
           });
           memoriesSuperseded++;
-        } else {
+        } else if (isPersistedMemory) {
           // Fallback: if updateMemory not available, save as new
           const pinned = shouldAutoPin(fact.content, fact.source ?? "inferred", fact.tags, autoPinRules);
           await storage.saveMemory({
@@ -178,6 +224,9 @@ export async function runEmbeddingPipeline(
             pinned,
           });
           memoriesSaved++;
+        } else {
+          // Best match is an in-batch entry from this same extraction run — skip
+          memoriesDeduped++;
         }
         acceptedEmbeddings.push({ embedding: fact.embedding });
         break;
@@ -201,5 +250,6 @@ export async function runEmbeddingPipeline(
     }
   }
 
-  return { memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted, profileFieldsUpdated };
+  return { memoriesSaved, memoriesDeduped, memoriesSuperseded, totalExtracted, profileFieldsUpdated, ...(reflectionStats && { reflection: reflectionStats }) };
 }
+

@@ -5,9 +5,10 @@ import {
   shouldCool,
   shouldGoDormant,
   reactivate,
+  shouldArchive,
   InvalidTransitionError,
 } from './state-machine.js';
-import { Thread, ThreadState } from '../types.js';
+import { Thread, ThreadState, Memory } from '../types.js';
 
 // ── Helper ──
 
@@ -300,5 +301,84 @@ describe('full lifecycle: active → cooling → dormant → closed', () => {
     // Close
     thread = transition(thread, 'closed');
     expect(thread.state).toBe('closed');
+  });
+});
+
+// ── shouldArchive ──
+
+describe('shouldArchive', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const HALF_LIFE = 180 * DAY_MS;
+
+  function makeMemory(overrides: Partial<Memory> = {}): Memory {
+    return {
+      id: 'mem-1',
+      userId: 'user-1',
+      threadId: 'thread-1',
+      content: 'test memory',
+      source: 'confirmed',
+      embedding: null,
+      createdAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  it('returns false for pinned memories regardless of age', () => {
+    const ancient = makeMemory({
+      pinned: true,
+      createdAt: new Date(Date.now() - HALF_LIFE * 100),
+    });
+    expect(shouldArchive(ancient, { forgettingHalfLifeMs: HALF_LIFE })).toBe(false);
+  });
+
+  it('returns false for recent memories', () => {
+    const recent = makeMemory({ createdAt: new Date() });
+    expect(shouldArchive(recent, { forgettingHalfLifeMs: HALF_LIFE })).toBe(false);
+  });
+
+  it('returns true for very old unretrieved memories', () => {
+    // With default minRetrievalScore of 0.1, decay factor must be < 0.1
+    // decayFactor = max(0.1, 1 - t/(2*halfLife))
+    // For decayFactor to be < 0.1: need 1 - t/(2*h) < 0.1 => t > 1.8*h
+    // But max(0.1, ...) floors at 0.1. So we need minRetrievalScore > 0.1
+    const veryOld = makeMemory({
+      createdAt: new Date(Date.now() - HALF_LIFE * 10),
+    });
+    // At minRetrievalScore = 0.2, decay factor of 0.1 < 0.2 => should archive
+    expect(shouldArchive(veryOld, {
+      forgettingHalfLifeMs: HALF_LIFE,
+      minRetrievalScore: 0.2,
+    })).toBe(true);
+  });
+
+  it('recently retrieved memories resist archiving', () => {
+    const mem = makeMemory({
+      createdAt: new Date(Date.now() - HALF_LIFE * 10),
+      lastRetrievedAt: new Date(Date.now() - DAY_MS),
+      retrievalCount: 5,
+    });
+    expect(shouldArchive(mem, {
+      forgettingHalfLifeMs: HALF_LIFE,
+      minRetrievalScore: 0.2,
+    })).toBe(false);
+  });
+
+  it('uses default config values when not specified', () => {
+    const recent = makeMemory({ createdAt: new Date() });
+    expect(shouldArchive(recent, {})).toBe(false);
+  });
+
+  it('high retrieval count prevents archiving', () => {
+    const old = makeMemory({
+      createdAt: new Date(Date.now() - HALF_LIFE * 5),
+      retrievalCount: 100,
+    });
+    // retrievalBoost = min(0.3, log1p(100)*0.1) = min(0.3, ~0.461) = 0.3
+    // decayFactor = max(0.1, 1 - 5h/(2h)) = max(0.1, -1.5) = 0.1
+    // with boost: min(1, 0.1 + 0.3) = 0.4, which is > 0.2
+    expect(shouldArchive(old, {
+      forgettingHalfLifeMs: HALF_LIFE,
+      minRetrievalScore: 0.2,
+    })).toBe(false);
   });
 });

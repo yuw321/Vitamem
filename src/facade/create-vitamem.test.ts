@@ -171,7 +171,7 @@ describe("createVitamem.chat", () => {
     await mem.chat({
       threadId: thread.id,
       message: "Hello!",
-      systemPrompt: "You are a health companion.",
+      systemPrompt: "You are a helpful assistant.",
     });
 
     const chatCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -179,7 +179,7 @@ describe("createVitamem.chat", () => {
       (m: { role: string }) => m.role === "system",
     );
     expect(systemMsg).toBeTruthy();
-    expect(systemMsg.content).toBe("You are a health companion.");
+    expect(systemMsg.content).toBe("You are a helpful assistant.");
   });
 });
 
@@ -416,7 +416,7 @@ describe("createVitamem.autoRetrieve", () => {
     const chatCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const systemMsg = chatCall.find(
       (m: { role: string; content: string }) =>
-        m.role === "system" && m.content.includes("previous sessions"),
+        m.role === "system" && m.content.includes("Retrieved Memories"),
     );
     expect(systemMsg).toBeTruthy();
   });
@@ -1401,19 +1401,19 @@ describe("hybrid memory architecture", () => {
     });
 
     // Set up a thread with messages
-    const thread = await mem.createThread({ userId: "patient-1" });
+    const thread = await mem.createThread({ userId: "user-1" });
     await mem.chat({ threadId: thread.id, message: "My A1C is 6.8%. I'm allergic to penicillin. I exercise on Mondays." });
 
     // Trigger dormant transition (extract → classify → profile + embed)
     const result = await mem.triggerDormantTransition(thread.id);
 
     // Verify profile was updated with structured facts
-    const profile = await mem.getProfile("patient-1");
+    const profile = await mem.getProfile("user-1");
     expect(profile).not.toBeNull();
-    // Vitals "set" action replaces the vitals field with the { key, record } value
-    const vitals = profile!.vitals as unknown as { key: string; record: { value: number; unit: string } };
-    expect(vitals.key).toBe("a1c");
-    expect(vitals.record.value).toBeCloseTo(6.8);
+    // Vitals are now unpacked into profile.vitals[key] = { value, unit, recordedAt }
+    expect(profile!.vitals.a1c).toBeDefined();
+    expect(profile!.vitals.a1c.value).toBeCloseTo(6.8);
+    expect(profile!.vitals.a1c.unit).toBe("%");
     expect(profile!.allergies).toContain("penicillin");
 
     // Verify freeform fact went through embedding pipeline
@@ -1423,7 +1423,7 @@ describe("hybrid memory architecture", () => {
     expect(result.memoriesSaved).toBeGreaterThanOrEqual(1);
 
     // Verify the freeform memory was embedded and stored
-    const memories = await storage.getMemories("patient-1");
+    const memories = await storage.getMemories("user-1");
     const exerciseMemory = memories.find(m => m.content.includes("Exercises on Mondays"));
     expect(exerciseMemory).toBeDefined();
     expect(exerciseMemory!.embedding).not.toBeNull();

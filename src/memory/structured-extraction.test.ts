@@ -118,6 +118,190 @@ describe('classifyStructuredFacts', () => {
     expect(result.structured[0].field).toBe('goals');
     expect(result.structured[0].action).toBe('add');
   });
+
+  // ── LLM-first classification path ──
+
+  it('LLM-first: fact with profileField:"vitals" routes to structured profile', () => {
+    const facts = [{
+      content: 'A1C is 6.8%',
+      profileField: 'vitals' as const,
+      profileKey: 'a1c',
+      profileValue: 6.8,
+      profileUnit: '%',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('vitals');
+    expect(result.structured[0].action).toBe('set');
+    const value = result.structured[0].value as { key: string; record: { value: number; unit: string } };
+    expect(value.key).toBe('a1c');
+    expect(value.record.value).toBeCloseTo(6.8);
+    expect(value.record.unit).toBe('%');
+  });
+
+  it('LLM-first: fact with profileField:"allergies" routes to structured profile', () => {
+    const facts = [{
+      content: 'Allergic to latex',
+      profileField: 'allergies' as const,
+      profileValue: 'latex',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('allergies');
+    expect(result.structured[0].action).toBe('add');
+    expect(result.structured[0].value).toBe('latex');
+  });
+
+  it('LLM-first: fact with profileField:"medications" and string value wraps as object', () => {
+    const facts = [{
+      content: 'Takes ibuprofen',
+      profileField: 'medications' as const,
+      profileValue: 'ibuprofen',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.structured[0].field).toBe('medications');
+    const med = result.structured[0].value as { name: string };
+    expect(med.name).toBe('ibuprofen');
+  });
+
+  it('fact without profileField falls through to regex fallback', () => {
+    // This fact has no profileField but matches a regex rule
+    const facts = [{ content: 'Blood pressure is 130/85' }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('vitals');
+  });
+
+  // ── Goal disambiguation safety net ──
+
+  it('safety net: reclassifies "doctor wants A1C under 7%" from vitals to goal', () => {
+    const facts = [{
+      content: 'doctor wants A1C under 7%',
+      profileField: 'vitals' as const,
+      profileKey: 'a1c',
+      profileValue: 7.0,
+      profileUnit: '%',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    // Should be reclassified to a goal, NOT stored as a vital
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('goals');
+    expect(result.structured[0].action).toBe('add');
+    // Value should be the original content string (goal text), not a numeric vital
+    expect(typeof result.structured[0].value).toBe('string');
+    expect(result.structured[0].value).toContain('doctor wants A1C under 7%');
+  });
+
+  it('safety net: actual vital "A1C came back at 7.4%" passes through as vital (no reclassification)', () => {
+    const facts = [{
+      content: 'A1C came back at 7.4%',
+      profileField: 'vitals' as const,
+      profileKey: 'a1c',
+      profileValue: 7.4,
+      profileUnit: '%',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    // Should remain a vital — no goal-indicator language present
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('vitals');
+    expect(result.structured[0].action).toBe('set');
+    const value = result.structured[0].value as { key: string; record: { value: number; unit: string } };
+    expect(value.key).toBe('a1c');
+    expect(value.record.value).toBeCloseTo(7.4);
+    expect(value.record.unit).toBe('%');
+  });
+
+  it('safety net: reclassifies "hoping to get blood pressure below 130" from vitals to goal', () => {
+    const facts = [{
+      content: 'hoping to get blood pressure below 130',
+      profileField: 'vitals' as const,
+      profileKey: 'blood_pressure',
+      profileValue: 130,
+      profileUnit: 'mmHg',
+    }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    // Should be reclassified to a goal
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('goals');
+    expect(result.structured[0].action).toBe('add');
+    expect(typeof result.structured[0].value).toBe('string');
+  });
+
+  // ── Regex-path goal guard & one-vital-per-key constraint ──
+
+  it('regex path: reclassifies vital with goal language to goal (no profileField)', () => {
+    // No profileField → falls through to regex. Content matches A1C regex as "vitals",
+    // but "Goal to lower" triggers goal-indicator guard via reclassifyVitalGoal.
+    const facts = [{ content: 'Goal to lower A1C below 7.0%', tags: ['vital'] }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('goals');
+    expect(result.structured[0].action).toBe('add');
+    expect(typeof result.structured[0].value).toBe('string');
+    expect(result.structured[0].sourceText).toBe('Goal to lower A1C below 7.0%');
+  });
+
+  it('one-vital-per-key: second duplicate A1C vital is reclassified as goal', () => {
+    // Two facts that both regex-classify to vitals with key "a1c".
+    // Neither contains goal language, so the guard doesn't fire.
+    // The one-per-key post-pass should keep the first and reclassify the second.
+    const facts = [
+      { content: 'Latest A1C is 7.4%' },
+      { content: 'A1C is 7.0%' },
+    ];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(2);
+    // First: kept as vital
+    expect(result.structured[0].field).toBe('vitals');
+    const v = result.structured[0].value as { key: string; record: { value: number } };
+    expect(v.key).toBe('a1c');
+    expect(v.record.value).toBeCloseTo(7.4);
+    // Second: reclassified to goal
+    expect(result.structured[1].field).toBe('goals');
+    expect(result.structured[1].action).toBe('add');
+    expect(typeof result.structured[1].value).toBe('string');
+  });
+
+  it('single regex-classified A1C vital passes through unchanged', () => {
+    // A single vital with no duplicates and no goal language — should remain as vitals.
+    const facts = [{ content: 'A1C came back at 7.4%' }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(1);
+    expect(result.freeform).toHaveLength(0);
+    expect(result.structured[0].field).toBe('vitals');
+    expect(result.structured[0].action).toBe('set');
+    const value = result.structured[0].value as { key: string; record: { value: number; unit: string } };
+    expect(value.key).toBe('a1c');
+    expect(value.record.value).toBeCloseTo(7.4);
+    expect(value.record.unit).toBe('%');
+  });
+
+  it('fact with neither LLM classification nor regex match goes to freeform', () => {
+    const facts = [{ content: 'Prefers morning appointments' }];
+    const result = classifyStructuredFacts(facts, rules);
+
+    expect(result.structured).toHaveLength(0);
+    expect(result.freeform).toHaveLength(1);
+    expect(result.freeform[0].content).toBe('Prefers morning appointments');
+  });
 });
 
 // ── applyStructuredFacts ──

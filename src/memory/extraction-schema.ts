@@ -7,6 +7,10 @@ export interface ValidatedMemory {
   content: string;
   source: MemorySource;
   tags?: string[];
+  profileField?: 'conditions' | 'medications' | 'allergies' | 'vitals' | 'goals' | 'none';
+  profileKey?: string;
+  profileValue?: string | number | { name: string; dosage?: string; frequency?: string };
+  profileUnit?: string;
 }
 
 /**
@@ -45,11 +49,29 @@ export function validateExtraction(parsed: unknown): ValidatedMemory[] {
         return true;
       },
     )
-    .map((item) => ({
-      content: item.content,
-      source: item.source,
-      ...(Array.isArray(item.tags)
-        ? { tags: item.tags.filter((t): t is string => typeof t === 'string') }
-        : {}),
-    }));
+    .map((item) => {
+      const obj = item as Record<string, unknown>;
+      const result: ValidatedMemory = {
+        content: item.content,
+        source: item.source,
+        ...(Array.isArray(item.tags)
+          ? { tags: item.tags.filter((t): t is string => typeof t === 'string') }
+          : {}),
+      };
+      // Pass through LLM-provided profile classification fields
+      if (typeof obj.profileField === 'string' &&
+          ['conditions', 'medications', 'allergies', 'vitals', 'goals', 'none'].includes(obj.profileField)) {
+        result.profileField = obj.profileField as ValidatedMemory['profileField'];
+      }
+      if (typeof obj.profileKey === 'string') {
+        result.profileKey = obj.profileKey;
+      }
+      if (obj.profileValue !== undefined && obj.profileValue !== null) {
+        result.profileValue = obj.profileValue as ValidatedMemory['profileValue'];
+      }
+      if (typeof obj.profileUnit === 'string') {
+        result.profileUnit = obj.profileUnit;
+      }
+      return result;
+    });
 }

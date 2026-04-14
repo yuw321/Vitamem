@@ -78,4 +78,57 @@ describe('validateExtraction', () => {
     expect(result).toHaveLength(1);
     expect(result[0].tags).toEqual(['valid']);
   });
+
+  it('preserves profileField, profileKey, profileValue, profileUnit', () => {
+    const input = {
+      memories: [
+        {
+          content: 'A1C is 6.8%',
+          source: 'confirmed',
+          profileField: 'vitals',
+          profileKey: 'a1c',
+          profileValue: 6.8,
+          profileUnit: '%',
+        },
+      ],
+    };
+    const result = validateExtraction(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].profileField).toBe('vitals');
+    expect(result[0].profileKey).toBe('a1c');
+    expect(result[0].profileValue).toBe(6.8);
+    expect(result[0].profileUnit).toBe('%');
+  });
+
+  it('ignores invalid profileField values', () => {
+    const input = {
+      memories: [
+        {
+          content: 'Some fact',
+          source: 'confirmed',
+          profileField: 'invalid_field',
+        },
+      ],
+    };
+    const result = validateExtraction(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].profileField).toBeUndefined();
+  });
+
+  it('preserves profile fields for medications with object value', () => {
+    const input = {
+      memories: [
+        {
+          content: 'Takes metformin 1000mg',
+          source: 'confirmed',
+          profileField: 'medications',
+          profileValue: { name: 'metformin', dosage: '1000mg' },
+        },
+      ],
+    };
+    const result = validateExtraction(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].profileField).toBe('medications');
+    expect(result[0].profileValue).toEqual({ name: 'metformin', dosage: '1000mg' });
+  });
 });

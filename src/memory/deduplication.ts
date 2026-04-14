@@ -1,4 +1,4 @@
-import { Memory, MemoryMatch, FactClassification } from '../types.js';
+import { FactClassification } from '../types.js';
 
 /**
  * Compute cosine similarity between two vectors.

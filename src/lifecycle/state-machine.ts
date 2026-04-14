@@ -1,4 +1,7 @@
-import { Thread, ThreadState, VALID_TRANSITIONS } from '../types.js';
+import { Thread, ThreadState, Memory, VALID_TRANSITIONS } from '../types.js';
+
+/** Default half-life: 180 days in milliseconds */
+const DEFAULT_HALF_LIFE_MS = 180 * 24 * 60 * 60 * 1000;
 
 export class InvalidTransitionError extends Error {
   constructor(from: ThreadState, to: ThreadState) {
@@ -76,4 +79,47 @@ export function reactivate(thread: Thread): Thread {
     throw new InvalidTransitionError(thread.state, 'active');
   }
   return transition(thread, 'active');
+}
+
+/**
+ * Determine if a memory should be archived based on its decay score.
+ * Returns true if the memory's decay score falls below the minRetrievalScore
+ * threshold and the memory is not pinned.
+ *
+ * @param memory - The memory to evaluate
+ * @param config - Configuration with minRetrievalScore and forgettingHalfLifeMs
+ * @returns true if the memory should be archived
+ */
+export function shouldArchive(
+  memory: Memory,
+  config: { minRetrievalScore?: number; forgettingHalfLifeMs?: number },
+): boolean {
+  // Pinned memories are never archived
+  if (memory.pinned) return false;
+
+  const minScore = config.minRetrievalScore ?? 0.1;
+  const halfLife = config.forgettingHalfLifeMs ?? DEFAULT_HALF_LIFE_MS;
+  const now = Date.now();
+
+  // Determine the reference time: lastRetrievedAt if available, otherwise createdAt
+  const referenceTime = memory.lastRetrievedAt
+    ? memory.lastRetrievedAt.getTime()
+    : memory.createdAt.getTime();
+
+  const timeSinceLastRetrieval = now - referenceTime;
+
+  // Base decay factor
+  let decayFactor = Math.max(
+    0.1,
+    1 - timeSinceLastRetrieval / (2 * halfLife),
+  );
+
+  // Retrieval count bonus
+  const retrievalCount = memory.retrievalCount ?? 0;
+  if (retrievalCount > 0) {
+    const retrievalBoost = Math.min(0.3, Math.log1p(retrievalCount) * 0.1);
+    decayFactor = Math.min(1, decayFactor + retrievalBoost);
+  }
+
+  return decayFactor < minScore;
 }
