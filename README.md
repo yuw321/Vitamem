@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/public/brand/logo-final.png" alt="vitamem" width="120" />
+  <img src="https://raw.githubusercontent.com/yuw321/Vitamem/main/website/public/brand/logo-concept-a.svg" alt="Vitamem" width="120" />
 </p>
 
 <h1 align="center">Vitamem</h1>

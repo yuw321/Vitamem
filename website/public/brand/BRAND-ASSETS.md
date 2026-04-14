@@ -4,12 +4,13 @@
 
 | File | Use |
 |---|---|
-| `logo.svg` | Primary logo mark (512x512). Light backgrounds. |
-| `logo-dark.svg` | Dark mode variant. Dark backgrounds. |
-| `logo-wordmark.svg` | Logo + "vitamem" text. READMEs, docs headers, social. |
-| `logo-generated.png` | AI-generated logo — continuous thread with lifecycle dots and memory spiral. High-res raster. |
+| `logo-concept-a.svg` | Primary logo mark. Site header, README (via raw GitHub URL), and marketing. |
 
-The logo is a continuous thread line passing through three lifecycle state nodes (active, cooling, dormant), ending in a memory spiral. Monochrome-first.
+The mark is a continuous thread line passing through three lifecycle state nodes (active, cooling, dormant), ending in a memory spiral. Monochrome-first.
+
+For the npm package README, the image URL must point at GitHub raw content (the published tarball does not include `website/`):
+
+`https://raw.githubusercontent.com/yuw321/Vitamem/main/website/public/brand/logo-concept-a.svg`
 
 ## Social & Preview Images
 
