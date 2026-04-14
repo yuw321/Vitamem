@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+*.tsbuildinfo
 
 # Test coverage
 coverage/
@@ -33,3 +34,7 @@ demo/node_modules/
 # Logs
 *.log
 npm-debug.log*
+
+# Tool directories
+.qoder/
+.cursor/
