@@ -45,7 +45,7 @@ src/
 ├── lifecycle/        # State machine: active/cooling/dormant/closed transitions
 ├── memory/           # Fact extraction and cosine similarity deduplication
 ├── embedding/        # Embedding pipeline (extract → embed → dedup → save)
-├── storage/          # InMemoryAdapter and SupabaseAdapter
+├── storage/          # EphemeralAdapter and SupabaseAdapter
 ├── types.ts          # All shared TypeScript interfaces and types
 └── index.ts          # Public exports
 ```
@@ -67,7 +67,7 @@ src/
 
 ## Adding a Storage Adapter
 
-Implement the `StorageAdapter` interface from `src/types.ts`. See `src/storage/in-memory-adapter.ts` for a simple reference implementation and `src/storage/supabase-adapter.ts` for a production example.
+Implement the `StorageAdapter` interface from `src/types.ts`. See `src/storage/ephemeral-adapter.ts` for a simple reference implementation and `src/storage/supabase-adapter.ts` for a production example.
 
 ## Adding an LLM Adapter Example
 
@@ -80,6 +80,14 @@ This project follows [Semantic Versioning](https://semver.org):
 - **Patch** (1.0.x) — bug fixes, no API changes
 - **Minor** (1.x.0) — new features, backwards-compatible
 - **Major** (x.0.0) — breaking API changes
+
+## Working on Roadmap Items
+
+Check the [Roadmap](ROADMAP.md) and [GitHub Milestones](https://github.com/yuw321/Vitamem/milestones) for planned work. If you want to pick up a roadmap item:
+
+1. Open or comment on the corresponding [GitHub Issue](https://github.com/yuw321/Vitamem/issues)
+2. Wait for a maintainer to assign it to avoid duplicate work
+3. Follow the PR guidelines above
 
 ## Code of Conduct
 

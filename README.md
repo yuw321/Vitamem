@@ -13,7 +13,12 @@
   <a href="https://github.com/yuw321/Vitamem/actions"><img src="https://img.shields.io/github/actions/workflow/status/yuw321/Vitamem/ci.yml?label=tests" alt="tests" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
   <a href="https://github.com/yuw321/Vitamem/discussions"><img src="https://img.shields.io/badge/discussions-GitHub-blue" alt="GitHub Discussions" /></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/roadmap-view-brightgreen" alt="Roadmap" /></a>
 </p>
+
+> **Developer Preview** — Vitamem's core API is stable. We are actively
+> working on operational hardening. See the [Roadmap](ROADMAP.md) and
+> [open issues](https://github.com/yuw321/Vitamem/issues) for what's next.
 
 ---
 
